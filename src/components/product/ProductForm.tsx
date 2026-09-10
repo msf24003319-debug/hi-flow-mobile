@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Plus, Save, Upload } from 'lucide-react';
 import { supabase } from '@/lib/supabase-client';
 import { uploadProductImage } from '@/lib/storage';
+import { resolveProductName } from '@/lib/utils';
 import { productSchema } from '@/validators/product.schema';
 import { Category, Product } from '@/types/admin.types';
 import { Modal } from '@/components/ui/Modal';
@@ -84,7 +85,14 @@ export function ProductForm({ product, categories, onClose, onSaved, onCategoryA
   useEffect(() => {
     if (product) {
       setForm({
-        name_en: product.name_en,
+        // The catalog + inventory screens display `title` (see
+        // resolveProductName / migration drift notes on the Product type), so
+        // seed the English-name field from the same resolved value the rest of
+        // the admin shows — not the raw, often-misaligned `name_en` column.
+        name_en: (() => {
+          const resolved = resolveProductName(product);
+          return resolved === '—' ? '' : resolved;
+        })(),
         name_ur: product.name_ur,
         category_id: product.category_id ?? '',
         description_en: product.description_en ?? '',
@@ -161,8 +169,17 @@ export function ProductForm({ product, categories, onClose, onSaved, onCategoryA
       // category_id is required by productSchema (a valid UUID, never '' or
       // null) — productFields.category_id is spread through as-is so every
       // insert/update payload explicitly carries a real category.
+      // The live `products` table has three drifted English-name columns
+      // (`title`, `name_en`, `name`). `title` is the one every admin screen
+      // reads for display (resolveProductName), so it MUST be written or an
+      // edit appears to do nothing. Keep all three in sync from the single
+      // English-name field so they stop drifting further.
+      const englishName = productFields.name_en.trim();
       const productPayload: Record<string, unknown> = {
         ...productFields,
+        title: englishName,
+        name_en: englishName,
+        name: englishName,
         sku: sku || null,
       };
 
@@ -177,8 +194,28 @@ export function ProductForm({ product, categories, onClose, onSaved, onCategoryA
         // stock is only ever changed via the Edit Inventory action,
         // which logs an auditable adjustment. Editing the product form
         // must never silently move stock.
-        const { error } = await supabase.from('products').update(productPayload).eq('id', productId);
-        if (error) throw error;
+        // .select() forces PostgREST to return the updated row(s). Without it
+        // an update that matches nothing (wrong id, or an RLS policy that
+        // silently filters the row) returns { data: null, error: null } — a
+        // "successful" no-op that looks exactly like the bug reported here.
+        const { data: updated, error } = await supabase
+          .from('products')
+          .update(productPayload)
+          .eq('id', productId)
+          .select();
+        if (error) {
+          console.error('[ProductForm] product update failed:', error);
+          throw error;
+        }
+        if (!updated || updated.length === 0) {
+          console.error(
+            '[ProductForm] product update affected 0 rows — id or RLS mismatch:',
+            productId,
+          );
+          throw new Error(
+            'Save did not update any row. The product may have been deleted, or you may not have permission to edit it.',
+          );
+        }
       } else {
         const { data, error } = await supabase
           .from('products')
@@ -189,7 +226,10 @@ export function ProductForm({ product, categories, onClose, onSaved, onCategoryA
           })
           .select('id')
           .single();
-        if (error) throw error;
+        if (error) {
+          console.error('[ProductForm] product insert failed:', error);
+          throw error;
+        }
         productId = data.id;
       }
 
@@ -199,7 +239,10 @@ export function ProductForm({ product, categories, onClose, onSaved, onCategoryA
       const { error: priceError } = await supabase
         .from('product_prices')
         .upsert({ product_id: productId, customer_price, wholesale_price });
-      if (priceError) throw priceError;
+      if (priceError) {
+        console.error('[ProductForm] product_prices upsert failed:', priceError);
+        throw priceError;
+      }
 
       // Log price history only for values that actually changed.
       const historyRows: Array<Record<string, unknown>> = [];
@@ -228,6 +271,7 @@ export function ProductForm({ product, categories, onClose, onSaved, onCategoryA
       onSaved();
       onClose();
     } catch (err: any) {
+      console.error('[ProductForm] save failed:', err);
       setError(err.message || 'Save failed');
     } finally {
       setSaving(false);
