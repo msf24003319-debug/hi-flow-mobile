@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useMemo, useState } from 'react';
 import { useSupabaseData } from '@/hooks/useSupabaseData';
 import { Category, Product } from '@/types/admin.types';

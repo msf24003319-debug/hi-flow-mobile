@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase-client';
 import { ProductReview, ReviewStatus } from '@/types/admin.types';
