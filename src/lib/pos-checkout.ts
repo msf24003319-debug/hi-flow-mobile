@@ -5,6 +5,7 @@ export interface CheckoutSnapshot {
   id: string; buyerId: string; accountId: string | null;
   accountType: 'customer' | 'shopkeeper'; accountName: string;
   subtotal: number; discount: number; net: number; payment: string;
+  paid_amount: number; remaining_amount: number; customer_address: string | null;
   items: { id: string; product_id: string; qty: number; price: number; product_title_snapshot: string }[];
 }
 
@@ -19,6 +20,7 @@ export async function insertCheckout(snapshot: CheckoutSnapshot): Promise<string
       invoice_number: `POS-${s.id}`, account_id: s.accountId, account_type: s.accountType,
       account_name_snapshot: s.accountName, total: s.net, total_amount: s.subtotal,
       discount: s.discount, net_amount: s.net, payment_method: s.payment, image_urls: [],
+      paid_amount: s.paid_amount, remaining_amount: s.remaining_amount, customer_address: s.customer_address,
     });
     if (error && error.code !== '23505') throw error;
     if (error) {
@@ -66,6 +68,7 @@ export async function completeCheckout(snapshot: CheckoutSnapshot): Promise<stri
     p_request_id: s.id, p_account_id: s.accountId, p_account_type: s.accountType,
     p_total_amount: s.subtotal, p_discount: s.discount, p_net_amount: s.net,
     p_payment_method: s.payment, p_image_urls: [],
+    p_paid_amount: s.paid_amount, p_remaining_amount: s.remaining_amount, p_customer_address: s.customer_address,
     p_cart: s.items.map(item => ({ product_id: item.product_id, qty: item.qty })),
   });
   if (error?.code === 'PGRST202' || error?.code === 'PZ001') {

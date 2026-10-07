@@ -26,11 +26,26 @@ test('missing customer details omit labels and supplied details appear', () => {
   const customerSection = html => html.split('Send To')[1].split('Invoice number')[0];
   assert.ok(!customerSection(render(base)).includes('Telephone'));
   assert.ok(!customerSection(render(base)).includes('Customer type'));
-  const html = customerSection(render({ ...base, customer: { ...base.customer, telephone: '03001234567', address: 'Street 1', type: 'shopkeeper' } }));
-  assert.ok(html.includes('03001234567') && html.includes('Street 1') && html.includes('shopkeeper'));
+  const html = customerSection(render({ ...base, customer: { ...base.customer, telephone: '03001234567', email: 'buyer@example.com', address: 'Street 1', type: 'shopkeeper' } }));
+  assert.ok(html.includes('03001234567') && html.includes('Street 1') && html.includes('shopkeeper') && html.includes('buyer@example.com'));
 });
 
-test('completed orders and unset payment statuses show Paid; explicit other statuses remain', () => {
-  for (const invoice of [{ ...base.invoice }, { ...base.invoice, orderStatus: 'completed', paymentStatus: 'Unpaid' }]) assert.ok(render({ ...base, invoice }).includes('>Paid<'));
-  assert.ok(render({ ...base, invoice: { ...base.invoice, orderStatus: 'pending', paymentStatus: 'Unpaid' } }).includes('>Unpaid<'));
+test('sequential order number is padded and missing sequence preserves short fallback', () => {
+  assert.ok(render(base).includes('POS-0001'));
+  const html = render({ ...base, invoice: { ...base.invoice, number: 'POS-45048F53', orderNumber: 'POS-45048F53' } });
+  assert.ok(html.includes('POS-45048F53'));
+});
+test('payment badge follows balances even when order status is completed', () => {
+  for (const [paidAmount, remainingAmount, status] of [[2459, 0, 'PAID'], [1000, 1459, 'PARTIAL'], [0, 2459, 'UNPAID']]) {
+    const html = render({ ...base, paidAmount, remainingAmount, invoice: { ...base.invoice, orderStatus: 'completed', paymentStatus: 'Paid' } });
+    assert.ok(html.includes(`>${status}<`));
+    assert.ok(html.includes('Paid Amount') && html.includes('Pending / Remaining Balance'));
+    assert.ok(html.includes(`PKR ${paidAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`));
+    assert.ok(html.includes(`PKR ${remainingAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`));
+  }
+});
+test('missing historical payment stays unknown and absent balance is calculated from paid amount', () => {
+  assert.ok(render(base).includes('>NOT RECORDED<'));
+  const html = render({ ...base, paidAmount: 1000 });
+  assert.ok(html.includes('>PARTIAL<') && html.includes('PKR 1,459.00'));
 });

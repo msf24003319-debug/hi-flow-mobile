@@ -6,6 +6,7 @@ const ts = require('typescript');
 
 const snapshot = () => ({ id: 'invoice-1', buyerId: 'admin-1', accountId: null, accountType: 'customer',
   accountName: 'Walk-in', subtotal: 100, discount: 10, net: 90, payment: 'cash',
+  paid_amount: 40, remaining_amount: 50, customer_address: '12 Main Street',
   items: [{ id: 'item-1', product_id: 'product-1', qty: 2, price: 50, product_title_snapshot: 'Pump' }] });
 
 function setup(rpcError = { code: 'PGRST202', message: 'Missing function' }) {
@@ -58,6 +59,9 @@ test('absent RPC falls back to pending order, items, then completed status', asy
   assert.equal(s.db.orders[0].status, 'completed');
   assert.equal(s.db.orders[0].account_id, null);
   assert.equal(s.db.orders[0].image_urls.length, 0);
+  assert.equal(s.db.orders[0].paid_amount, 40);
+  assert.equal(s.db.orders[0].remaining_amount, 50);
+  assert.equal(s.db.orders[0].customer_address, '12 Main Street');
   assert.equal(s.db.order_items[0].price, 50);
   assert.equal(s.state.rpcArgs.name, 'pos_complete_checkout');
   assert.ok(s.state.calls.indexOf('orders:insert') < s.state.calls.indexOf('order_items:insert'));
@@ -84,6 +88,23 @@ test('installed RPC uses its transaction without table writes', async () => {
   assert.equal(await s.completeCheckout(snapshot()), 'invoice-1');
   assert.equal(s.state.calls.length, 0);
   assert.equal(s.state.rpcArgs.args.p_net_amount, 90);
+  assert.equal(s.state.rpcArgs.args.p_paid_amount, 40);
+  assert.equal(s.state.rpcArgs.args.p_remaining_amount, 50);
+  assert.equal(s.state.rpcArgs.args.p_customer_address, '12 Main Street');
+});
+test('unpaid and fully paid invoices retain balances through fallback retries', async () => {
+  for (const paid of [0, 90]) {
+    const s = setup();
+    const invoice = { ...snapshot(), paid_amount: paid, remaining_amount: 90 - paid, customer_address: null };
+    s.state.failItems = true;
+    await assert.rejects(s.completeCheckout(invoice));
+    s.state.failItems = false;
+    await s.completeCheckout(invoice);
+    assert.equal(s.db.orders.length, 1);
+    assert.equal(s.db.orders[0].paid_amount, paid);
+    assert.equal(s.db.orders[0].remaining_amount, 90 - paid);
+    assert.equal(s.db.orders[0].customer_address, null);
+  }
 });
 test('installing RPC after a partial fallback resumes the existing pending invoice', async () => {
   const s = setup(); s.state.failItems = true;

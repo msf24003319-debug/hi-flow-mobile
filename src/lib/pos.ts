@@ -2,7 +2,7 @@ import { supabase } from './supabase-client';
 
 export interface Account {
   id: string; name: string; type: 'customer' | 'shopkeeper';
-  phone: string | null; email: string | null; balance: number;
+  phone: string | null; email: string | null; address?: string | null; balance: number;
 }
 export type PriceValue = number | string | null;
 interface PriceFields {

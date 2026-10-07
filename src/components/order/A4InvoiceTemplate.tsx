@@ -1,10 +1,11 @@
 import { QrCode } from 'lucide-react';
 
 export const DEFAULT_STORE_METADATA = {
-  name: 'Hi Flow Pump Industries',
-  telephone: '+92 300 1234567',
-  email: 'info@hiflowpumps.com',
+  name: 'HiFlow Pump Industries',
+  telephone: '+92 324 8498456',
+  email: 'sultansohailkhan194@gmail.com',
   vatNtnNumber: 'NTN-7492018-9',
+  ShopAddress: 'Shop#3 shaheen Market Club Road Vehari',
 };
 
 export interface A4InvoiceItem {
@@ -31,6 +32,7 @@ export interface A4InvoiceTemplateProps {
     city: string;
     telephone: string;
     type: string;
+    email?: string | null;
   };
   invoice: {
     number: string;
@@ -48,6 +50,8 @@ export interface A4InvoiceTemplateProps {
   currency?: string;
   subtotalAmount?: number;
   totalAmount?: number;
+  paidAmount?: number | null;
+  remainingAmount?: number | null;
   branding?: string;
 }
 
@@ -63,7 +67,7 @@ function Detail({ label, value }: { label: string; value?: string }) {
 /** Render one invoice at a time; call window.print() from the containing page. */
 export function A4InvoiceTemplate({
   company, customer, invoice, items, discount = 0, currency = 'PKR',
-  branding = 'Thank you for your business', subtotalAmount, totalAmount,
+  branding = 'Thank you for your business', subtotalAmount, totalAmount, paidAmount, remainingAmount,
 }: A4InvoiceTemplateProps) {
   const subtotal = subtotalAmount ?? items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
   const total = totalAmount ?? subtotal - discount;
@@ -72,15 +76,20 @@ export function A4InvoiceTemplate({
   })}`;
 
   const storeName = company.name.trim() || DEFAULT_STORE_METADATA.name;
-  const paymentStatus = invoice.orderStatus === 'completed' ? 'Paid' : invoice.paymentStatus?.trim() || 'Paid';
+  const remaining = remainingAmount ?? (paidAmount == null ? null : Math.max(0, Math.round((total - paidAmount) * 100) / 100));
+  const paid = paidAmount ?? (remaining == null ? null : Math.max(0, Math.round((total - remaining) * 100) / 100));
+  const paymentStatus = remaining == null ? 'NOT RECORDED' : remaining <= 0 ? 'PAID' : (paid ?? 0) > 0 ? 'PARTIAL' : 'UNPAID';
+  const statusClass = paymentStatus === 'PAID' ? 'bg-green-100 text-green-800' : paymentStatus === 'PARTIAL' ? 'bg-amber-100 text-amber-800' : paymentStatus === 'UNPAID' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-600';
+  const orderNumber = /^\d+$/.test(invoice.orderNumber.trim()) ? `POS-${invoice.orderNumber.trim().padStart(4, '0')}` : invoice.orderNumber;
+  const invoiceNumber = /^\d+$/.test(invoice.orderNumber.trim()) ? orderNumber : invoice.number;
 
   return (
-    <article id="a4-printable-invoice" aria-label={`Billing invoice ${invoice.number}`}
+    <article id="a4-printable-invoice" aria-label={`Billing invoice ${invoiceNumber}`}
       className="mx-auto flex w-[210mm] min-h-[297mm] shrink-0 flex-col bg-white p-[15mm] font-sans text-gray-900 shadow-xl">
       <header className="mb-8 flex items-start justify-between gap-6">
         <div>
           <h1 className="text-4xl font-extrabold uppercase tracking-wide text-slate-900">Billing Invoice</h1>
-          <p className="mt-2 text-xs uppercase tracking-[0.2em] text-gray-500">{invoice.number}</p>
+          <p className="mt-2 text-xs uppercase tracking-[0.2em] text-gray-500">{invoiceNumber}</p>
         </div>
         <div aria-label="QR code placeholder" className="flex h-24 w-24 shrink-0 items-center justify-center border border-gray-300 bg-gray-50">
           <QrCode aria-hidden="true" className="h-16 w-16 text-slate-900" strokeWidth={1.5} />
@@ -112,15 +121,16 @@ export function A4InvoiceTemplate({
           {customer.city.trim() && <p className="text-xs leading-5">{customer.city}</p>}
           <dl className="mt-2 space-y-1">
             {customer.telephone.trim() && <Detail label="Telephone" value={customer.telephone} />}
+            {customer.email?.trim() && <Detail label="Email" value={customer.email.trim()} />}
             {customer.type.trim() && <Detail label="Customer type" value={customer.type} />}
           </dl>
         </div>
         <dl className="space-y-2">
-          <Detail label="Invoice number" value={invoice.number} />
+          <Detail label="Invoice number" value={invoiceNumber} />
           <Detail label="Date" value={invoice.date} />
-          <Detail label="Order number" value={invoice.orderNumber} />
+          <Detail label="Order number" value={orderNumber} />
           <Detail label="Terms of payment" value={invoice.paymentTerms} />
-          <Detail label="Payment status" value={paymentStatus} />
+          <div className="grid grid-cols-[120px_1fr] gap-3 text-xs leading-5"><dt className="text-gray-500">Payment status</dt><dd><span className={`inline-block rounded px-2 py-1 font-bold ${statusClass}`}>{paymentStatus}</span></dd></div>
         </dl>
       </section>
 
@@ -154,7 +164,9 @@ export function A4InvoiceTemplate({
       <dl className="ml-auto w-[42%] border-x border-b border-gray-400 text-xs [break-inside:avoid]">
         <div className="flex justify-between gap-3 border-b border-gray-400 px-3 py-3"><dt>Subtotal</dt><dd className="text-right">{money(subtotal)}</dd></div>
         <div className="flex justify-between gap-3 border-b border-gray-400 px-3 py-3"><dt>Discount</dt><dd className="text-right">{money(discount)}</dd></div>
-        <div className="flex justify-between gap-3 bg-gray-50 px-3 py-3 text-sm font-bold"><dt>Total</dt><dd className="text-right">{money(total)}</dd></div>
+        <div className="flex justify-between gap-3 border-b border-gray-400 bg-gray-50 px-3 py-3 text-sm font-bold"><dt>Net Total</dt><dd className="text-right">{money(total)}</dd></div>
+        <div className="flex justify-between gap-3 border-b border-gray-400 px-3 py-3 text-green-700"><dt>Paid Amount</dt><dd className="text-right">{paid == null ? 'Not recorded' : money(paid)}</dd></div>
+        <div className={`flex justify-between gap-3 px-3 py-3 font-bold ${remaining == null ? 'text-gray-500' : remaining > 0 ? 'text-red-700' : 'text-green-700'}`}><dt>Pending / Remaining Balance</dt><dd className="text-right">{remaining == null ? 'Not recorded' : money(remaining)}</dd></div>
       </dl>
 
       <footer className="mt-auto flex items-center justify-center gap-2 pt-10 text-center text-[10px] text-gray-500">

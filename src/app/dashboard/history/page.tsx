@@ -7,17 +7,16 @@ import { uploadInvoiceImage } from '@/lib/storage';
 import { attachInvoiceImage, removeInvoiceImage, errorMessage } from '@/lib/pos';
 import { A4InvoiceTemplate } from '@/components/order/A4InvoiceTemplate';
 import { downloadInvoicePdf } from '@/lib/invoice-pdf';
-import { Order } from '@/types/admin.types';
 import { DataTable, Column } from '@/components/ui/DataTable';
-import { OrderDetailsModal } from '@/components/order/OrderDetailsModal';
+import { OrderDetailsModal, OrderDetailsData, formatOrderNumber } from '@/components/order/OrderDetailsModal';
 import { formatDateTime, formatPKR } from '@/lib/utils';
 
-interface AuditOrder extends Order {
+interface AuditOrder extends OrderDetailsData {
   invoice_number: string | null; account_type: string | null; account_name_snapshot: string | null;
   total_amount: number | null; discount: number | null; net_amount: number | null;
   payment_status?: string | null;
   payment_method: string | null; image_urls: string[] | null;
-  account: { name: string; type: string } | null;
+  account: { name: string; type: string; phone: string | null; email: string | null; address: string | null } | null;
 }
 interface AuditItem {
   id: string; qty: number; price: number; product_title_snapshot: string | null;
@@ -28,7 +27,7 @@ const buyerName = (o: AuditOrder) => o.account_name_snapshot ?? o.account?.name
   ?? o.buyer?.shopkeepers?.shop_name ?? o.buyer?.shopkeepers?.name ?? o.buyer?.customers?.name ?? 'Unknown buyer';
 const buyerType = (o: AuditOrder) => o.account_type ?? o.account?.type
   ?? (o.buyer?.shopkeepers ? 'shopkeeper' : o.buyer?.customers ? 'customer' : 'unknown');
-const invoice = (o: AuditOrder) => o.invoice_number ?? o.order_number ?? `#${o.id.slice(0, 8)}`;
+const invoice = formatOrderNumber;
 
 export default function HistoryPage() {
   const [orders, setOrders] = useState<AuditOrder[]>([]);
@@ -54,7 +53,7 @@ export default function HistoryPage() {
       const rows: AuditOrder[] = [];
       for (let from = 0; ; from += 500) {
         const { data, error } = await supabase.from('orders').select(`*,
-          account:accounts!orders_account_id_fkey(name,type),
+          account:accounts!orders_account_id_fkey(name,type,phone,email,address),
           buyer:profiles!orders_buyer_id_fkey(shopkeepers(name,shop_name,phone,area),customers(name,phone))`)
           .order('created_at', { ascending: false }).order('id').range(from, from + 499);
         if (error) throw error;
@@ -164,23 +163,25 @@ export default function HistoryPage() {
     <div className="flex justify-between"><div><h1 className="text-2xl font-bold">Billing &amp; Purchase History</h1><p className="text-sm text-subtle">POS and existing orders, with historical line items and receipts.</p></div><button className="text-brand" disabled={loading} onClick={() => void load()}>Refresh</button></div>
     {error && <p role="alert" className="text-danger">{error}</p>}
     <DataTable columns={columns} rows={orders} loading={loading} rowKey={o => o.id} searchable={o => `${invoice(o)} ${buyerName(o)} ${buyerType(o)}`} searchPlaceholder="Search invoice, buyer or type" emptyText="No orders found." />
-    {selected && <OrderDetailsModal title={invoice(selected)} subtitle={`${buyerName(selected)} (${buyerType(selected)})`} onClose={() => { if (!uploadLock.current && !exportLock.current) { ++detailRequest.current; setSelected(null); } }}
+    {selected && <OrderDetailsModal order={selected} subtitle={`${buyerName(selected)} (${buyerType(selected)})`} onClose={() => { if (!uploadLock.current && !exportLock.current) { ++detailRequest.current; setSelected(null); } }}
       onPrint={() => void handleInvoiceOutput(false)} onDownload={() => void handleInvoiceOutput(true)}
       exporting={exporting} invoiceReady={itemsReady && !detailLoading} invoiceRef={invoiceRef}
       invoiceTemplate={
       <A4InvoiceTemplate
         company={{ name: 'Hi Flow Pump Industries', address: '', cityPostCode: '', location: '',
           senderName: '', telephone: '', email: '', vatNtnNumber: '' }}
-        customer={{ name: buyerName(selected), address: selected.delivery_address ?? '', city: '',
-          telephone: selected.buyer?.shopkeepers?.phone ?? selected.buyer?.customers?.phone ?? '', type: buyerType(selected) }}
+        customer={{ name: buyerName(selected), address: selected.customer_address ?? selected.account?.address ?? selected.delivery_address ?? '', city: '',
+          telephone: selected.customer_phone ?? (selected.account_id || selected.account_type ? selected.account?.phone ?? '' : selected.buyer?.shopkeepers?.phone ?? selected.buyer?.customers?.phone ?? ''),
+          email: selected.customer_email ?? selected.account?.email, type: buyerType(selected) }}
         invoice={{ number: invoice(selected), date: formatDateTime(selected.created_at),
-          orderNumber: selected.order_number ?? selected.id, paymentTerms: selected.payment_method ?? 'Not recorded',
+          orderNumber: selected.order_number == null ? invoice(selected) : String(selected.order_number), paymentTerms: selected.payment_method ?? 'Not recorded',
           orderStatus: selected.status, paymentStatus: selected.payment_status }}
         items={items.map(item => ({ id: item.id,
           description: item.product_title_snapshot ?? item.product?.title ?? item.product?.name ?? item.product?.name_en ?? 'Unavailable product',
           quantity: item.qty, unitPrice: item.price }))}
         discount={selected.discount ?? 0} subtotalAmount={selected.total_amount ?? selected.total}
-        totalAmount={selected.net_amount ?? selected.total} branding="Hi Flow Pump Industries" />
+        totalAmount={selected.net_amount ?? selected.total} paidAmount={selected.paid_amount}
+        remainingAmount={selected.remaining_amount} branding="Hi Flow Pump Industries" />
       }>
       <div className="space-y-6 text-gray-200">
         <p className="rounded-xl border border-gray-800 bg-[#222222] px-4 py-3 text-sm text-gray-400">{formatDateTime(selected.created_at)} · {selected.status} · {selected.payment_method ?? 'Payment method not recorded'}</p>
@@ -189,11 +190,6 @@ export default function HistoryPage() {
           <thead><tr className="bg-[#262626] text-gray-400"><th className="p-2">Product</th><th className="p-2">Quantity</th><th className="p-2">Unit price</th><th className="p-2">Total</th></tr></thead>
           <tbody>{items.map(item => <tr key={item.id} className="border-t border-border"><td className="p-2">{item.product_title_snapshot ?? item.product?.title ?? item.product?.name ?? item.product?.name_en ?? 'Unavailable product'}</td><td className="p-2">{item.qty}</td><td className="p-2">{formatPKR(item.price)}</td><td className="p-2">{formatPKR(item.qty * item.price)}</td></tr>)}</tbody>
         </table>{!items.length && <p>No line items recorded.</p>}</div>}
-        <div className="space-y-2 rounded-xl border border-gray-800 bg-[#222222] p-4 text-sm">
-          <p>Subtotal: {formatPKR(selected.total_amount ?? selected.total)}</p>
-          <p>Discount: {formatPKR(selected.discount ?? 0)}</p>
-          <p className="text-brand font-bold">Net total: {formatPKR(selected.net_amount ?? selected.total)}</p>
-        </div>
         <div><h3 className="font-semibold mb-3">Receipt images</h3>
           <div className="flex flex-wrap gap-3">{(selected.image_urls ?? []).map((url, index) => /^https:\/\//.test(url) &&
             <div key={url} className="group relative w-32 h-32">

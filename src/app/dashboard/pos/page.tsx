@@ -18,6 +18,7 @@ export default function PosPage() {
   const [accountId, setAccountId] = useState('');
   const [cart, setCart] = useState<Record<string, number>>({});
   const [discount, setDiscount] = useState('0');
+  const [paidAmount, setPaidAmount] = useState('');
   const [payment, setPayment] = useState('cash');
   const [receipt, setReceipt] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -29,6 +30,7 @@ export default function PosPage() {
   const [accountType, setAccountType] = useState<Account['type']>('customer');
   const [accountPhone, setAccountPhone] = useState('');
   const [accountEmail, setAccountEmail] = useState('');
+  const [accountAddress, setAccountAddress] = useState('');
   const requestId = useRef<string | null>(null);
   const lock = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -74,12 +76,15 @@ export default function PosPage() {
   });
   const { subtotal, netTotal } = cartTotals(lines, discount);
   const reduction = Number(discount);
+  const paid = Number(paidAmount);
+  const remainingAmount = money(netTotal - (Number.isFinite(paid) ? paid : 0));
   const validationError = lines.length === 0 ? 'Add at least one product before completing the sale.'
     : !Number.isFinite(subtotal) || subtotal <= 0 ? 'Total amount must be a valid amount greater than zero.'
     : lines.some(l => l.unit_price === null || l.unit_price <= 0 || !Number.isFinite(l.total_price)) ? 'Every product must have a valid price greater than zero.'
     : lines.some(l => !Number.isInteger(l.qty) || l.qty < 1 || l.qty > 999999) ? 'Quantities must be whole numbers from 1 to 999999.'
     : lines.length > 200 ? 'A sale can contain at most 200 different products.'
     : discount.trim() === '' || !Number.isFinite(reduction) || reduction < 0 || reduction > subtotal || money(reduction) !== reduction ? 'Discount must be between zero and the subtotal, with at most two decimal places.'
+    : !Number.isFinite(paid) || paid < 0 || paid > netTotal || money(paid) !== paid ? 'Paid amount must be between zero and the net total, with at most two decimal places.'
     : accountId && !account ? 'Selected billing account is unavailable. Select the account again.' : '';
   const changeCart = (id: string, qty: number) => {
     if (!Number.isFinite(qty) || !Number.isInteger(qty) || qty > 999999) { setError('Enter a whole-number quantity up to 999999.'); return; }
@@ -96,10 +101,10 @@ export default function PosPage() {
     lock.current = true; setBusy(true); setError('');
     try {
       const { data, error } = await supabase.from('accounts').insert({ name: accountName.trim(), type: accountType,
-        phone: accountPhone.trim() || null, email: accountEmail.trim() || null }).select('*').single();
+        phone: accountPhone.trim() || null, email: accountEmail.trim() || null, address: accountAddress.trim() || null }).select('*').single();
       if (error) throw error;
       setAccounts(old => [...old, data as Account]); setAccountId(data.id); setAccountName('');
-      setAccountPhone(''); setAccountEmail(''); requestId.current = null;
+      setAccountPhone(''); setAccountEmail(''); setAccountAddress(''); requestId.current = null;
     } catch (e) { setError(errorMessage(e)); }
     finally { lock.current = false; setBusy(false); }
   }
@@ -119,6 +124,7 @@ export default function PosPage() {
         checkoutSnapshot.current = {
           id, buyerId: auth.user.id, accountId: accountId || null, accountType: account?.type ?? 'customer',
           accountName: account?.name ?? 'Walk-in', subtotal, discount: reduction, net: netTotal, payment,
+          paid_amount: paid, remaining_amount: remainingAmount, customer_address: account?.address?.trim() || null,
           items: lines.map(l => ({ id: crypto.randomUUID(), product_id: l.product.id, qty: l.qty,
             price: l.unit_price!, product_title_snapshot: l.product.title ?? 'Product' })),
         };
@@ -137,7 +143,7 @@ export default function PosPage() {
           setError(`Sale saved, but receipt attachment failed: ${errorMessage(e)}. Attach it from Billing History.`);
         }
       }
-      setCart({}); setDiscount('0'); setReceipt(null); requestId.current = null;
+      setCart({}); setDiscount('0'); setPaidAmount(''); setReceipt(null); requestId.current = null;
       checkoutSnapshot.current = null; setPendingCheckout(null);
       if (fileInput.current) fileInput.current.value = '';
     } catch (e) {
@@ -181,6 +187,7 @@ export default function PosPage() {
             <select aria-label="Account type" className={input} value={accountType} onChange={e => setAccountType(e.target.value as Account['type'])}><option value="customer">Customer</option><option value="shopkeeper">Shopkeeper</option></select>
             <input aria-label="Phone" placeholder="Phone" className={input} value={accountPhone} onChange={e => setAccountPhone(e.target.value)} />
             <input aria-label="Email" type="email" placeholder="Email" className={input} value={accountEmail} onChange={e => setAccountEmail(e.target.value)} />
+            <input aria-label="Address" placeholder="Address" className={input} value={accountAddress} onChange={e => setAccountAddress(e.target.value)} />
             <button disabled={!accountName.trim()} className="text-brand" onClick={() => void createAccount()}>Save account</button>
           </div>
         </details>
@@ -196,6 +203,8 @@ export default function PosPage() {
         <p className="flex flex-wrap justify-between gap-2"><span>Subtotal</span><span>{formatPKR(subtotal)}</span></p>
         <label className="block">Discount (PKR)<input className={input} type="number" min="0" max={subtotal} step="0.01" value={discount} onChange={e => { setDiscount(e.target.value); requestId.current = null; }} /></label>
         <p className="flex flex-wrap justify-between gap-2 text-brand font-bold"><span>Net total</span><span>{formatPKR(netTotal)}</span></p>
+        <label className="block">Paid Amount (PKR)<input className={input} type="number" min="0" max={netTotal} step="0.01" placeholder={String(netTotal)} value={paidAmount} onChange={e => { setPaidAmount(e.target.value); requestId.current = null; }} /></label>
+        <p aria-live="polite" className={`flex flex-wrap justify-between gap-2 ${remainingAmount > 0 ? 'text-red-400' : 'text-green-400'}`}><span>Pending / Remaining</span><span>{formatPKR(remainingAmount)}</span></p>
         <label className="block">Payment method<select className={input} value={payment} onChange={e => { setPayment(e.target.value); requestId.current = null; }}><option value="cash">Cash</option><option value="card">Card</option><option value="bank_transfer">Bank transfer</option></select></label>
         <label className="block">Receipt image (optional, max 10 MB)<input ref={fileInput} className="block mt-2 w-full min-w-0 text-xs file:max-w-full file:whitespace-normal file:text-xs" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setReceipt(e.target.files?.[0] ?? null)} /></label>
         <p className="text-muted text-xs">Attached images use public URLs. Upload receipts suitable for public access.</p>
