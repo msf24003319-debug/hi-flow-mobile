@@ -8,7 +8,7 @@ import { Account, PosProduct, normalizeProduct, priceFor, money, cartTotals, err
 import { formatPKR } from '@/lib/utils';
 import { CheckoutSnapshot, completeCheckout } from '@/lib/pos-checkout';
 
-const input = 'w-full rounded-lg border border-border bg-bg p-2 text-white';
+const input = 'w-full min-w-0 rounded-lg border border-border bg-bg p-2 text-xs text-white';
 
 export default function PosPage() {
   const [products, setProducts] = useState<PosProduct[]>([]);
@@ -156,21 +156,21 @@ export default function PosPage() {
     <div><h1 className="text-2xl font-bold">POS Terminal</h1><p className="text-subtle text-sm">Customer and shopkeeper billing</p></div>
     {error && <p role="alert" className="text-danger">{error}</p>}
     {message && <p role="status" className="text-brand break-all">{message} <Link href="/dashboard/history" className="underline">View history</Link></p>}
-    <fieldset disabled={busy || loading || !!pendingCheckout} className="grid gap-6 lg:grid-cols-2 disabled:opacity-70">
-      <section className="space-y-3">
+    <fieldset disabled={busy || loading || !!pendingCheckout} className="grid min-w-0 grid-cols-[1.1fr_0.9fr] gap-2 disabled:opacity-70">
+      <section className="min-w-0 space-y-2 text-xs">
         <label className="block">Search products by title<input className={input} value={search} onChange={e => setSearch(e.target.value)} /></label>
         {loading ? <p>Loading products and accounts...</p> : <div className="max-h-[65vh] overflow-y-auto space-y-2">
           {products.filter(p => (p.title ?? '').toLowerCase().includes(search.toLowerCase())).map(p => {
             const price = priceFor(p, wholesale);
             return <button key={p.id} disabled={price === null || lines.length >= 200 && !cart[p.id]} onClick={() => changeCart(p.id, (cart[p.id] ?? 0) + 1)}
-              className="w-full flex justify-between text-left gap-3 border border-border rounded-lg p-3 bg-surface disabled:opacity-40">
-              <span>{p.title || 'Untitled product'}</span><span>{price === null ? 'Price unavailable' : formatPKR(money(price))} +</span>
+              className="w-full min-w-0 flex flex-wrap justify-between text-left text-xs gap-2 border border-border rounded-lg p-2 bg-surface disabled:opacity-40">
+              <span className="min-w-0 break-words [overflow-wrap:anywhere]">{p.title || 'Untitled product'}</span><span className="min-w-0 [overflow-wrap:anywhere]">{price === null ? 'Price unavailable' : formatPKR(money(price))} +</span>
             </button>;
           })}
           {products.length === 0 && <p>No products available.</p>}
         </div>}
       </section>
-      <section className="space-y-4 bg-surface border border-border rounded-xl p-4">
+      <section className="min-w-0 space-y-2 text-xs [overflow-wrap:anywhere] bg-surface border border-border rounded-xl p-2">
         <label className="block">Buyer<select className={input} value={accountId} onChange={e => { setAccountId(e.target.value); requestId.current = null; }}>
           <option value="">Walk-in (customer pricing)</option>
           {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.type})</option>)}
@@ -184,22 +184,22 @@ export default function PosPage() {
             <button disabled={!accountName.trim()} className="text-brand" onClick={() => void createAccount()}>Save account</button>
           </div>
         </details>
-        <p className="text-subtle text-sm">{wholesale ? 'Wholesale pricing (customer price fallback)' : 'Customer pricing'}</p>
-        {lines.map(l => <div key={l.product.id} className="space-y-2 border-b border-border pb-3">
-          <div className="flex justify-between gap-2"><span>{l.product.title}</span><button aria-label={`Remove ${l.product.title}`} onClick={() => changeCart(l.product.id, 0)} className="text-danger">Remove</button></div>
-          <div className="flex items-center justify-between gap-3">
-            <input aria-label={`Quantity for ${l.product.title}`} type="number" min="1" max="999999" step="1" className={`${input} max-w-24`} value={l.qty} onChange={e => changeCart(l.product.id, Number(e.target.value))} />
-            <span>{l.price === null ? 'Price unavailable' : `${formatPKR(l.price)} each / ${formatPKR(money(l.price * l.qty))}`}</span>
+        <p className="text-subtle text-xs">{wholesale ? 'Wholesale pricing (customer price fallback)' : 'Customer pricing'}</p>
+        {lines.map(l => <div key={l.product.id} className="space-y-2 border-b border-border pb-2">
+          <div className="flex flex-wrap justify-between gap-2"><span className="min-w-0">{l.product.title}</span><button aria-label={`Remove ${l.product.title}`} onClick={() => changeCart(l.product.id, 0)} className="text-danger">Remove</button></div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <input aria-label={`Quantity for ${l.product.title}`} type="number" min="1" max="999999" step="1" className={`${input} max-w-16`} value={l.qty} onChange={e => changeCart(l.product.id, Number(e.target.value))} />
+            <span className="min-w-0">{l.price === null ? 'Price unavailable' : `${formatPKR(l.price)} each / ${formatPKR(money(l.price * l.qty))}`}</span>
           </div>
         </div>)}
         {!lines.length && <p className="text-muted">Select products to start a sale.</p>}
-        <p className="flex justify-between"><span>Subtotal</span><span>{formatPKR(subtotal)}</span></p>
+        <p className="flex flex-wrap justify-between gap-2"><span>Subtotal</span><span>{formatPKR(subtotal)}</span></p>
         <label className="block">Discount (PKR)<input className={input} type="number" min="0" max={subtotal} step="0.01" value={discount} onChange={e => { setDiscount(e.target.value); requestId.current = null; }} /></label>
-        <p className="flex justify-between text-brand font-bold"><span>Net total</span><span>{formatPKR(netTotal)}</span></p>
+        <p className="flex flex-wrap justify-between gap-2 text-brand font-bold"><span>Net total</span><span>{formatPKR(netTotal)}</span></p>
         <label className="block">Payment method<select className={input} value={payment} onChange={e => { setPayment(e.target.value); requestId.current = null; }}><option value="cash">Cash</option><option value="card">Card</option><option value="bank_transfer">Bank transfer</option></select></label>
-        <label className="block">Receipt image (optional, max 10 MB)<input ref={fileInput} className="block mt-2 w-full" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setReceipt(e.target.files?.[0] ?? null)} /></label>
+        <label className="block">Receipt image (optional, max 10 MB)<input ref={fileInput} className="block mt-2 w-full min-w-0 text-xs file:max-w-full file:whitespace-normal file:text-xs" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setReceipt(e.target.files?.[0] ?? null)} /></label>
         <p className="text-muted text-xs">Attached images use public URLs. Upload receipts suitable for public access.</p>
-        {validationError && <p className="text-warn text-sm">{validationError}</p>}
+        {validationError && <p className="text-warn text-xs">{validationError}</p>}
       </section>
     </fieldset>
     {pendingCheckout && !busy && <p role="status" className="text-warn">Invoice POS-{pendingCheckout.id} is awaiting confirmation. Retry the same checkout to finish it.</p>}
