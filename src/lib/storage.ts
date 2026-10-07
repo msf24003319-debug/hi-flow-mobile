@@ -1,5 +1,21 @@
 import { supabase } from './supabase-client';
 
+/** Append-only receipt uploads. Public URLs must never contain sensitive documents. */
+export async function uploadInvoiceImage(file: File, orderId: string): Promise<string> {
+  const extensions: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+  const extension = extensions[file.type];
+  if (!extension || file.size === 0 || file.size > 10 * 1024 * 1024) {
+    throw new Error('Choose a JPEG, PNG or WebP image up to 10 MB.');
+  }
+  if (!/^[0-9a-f-]{36}$/i.test(orderId)) throw new Error('Invalid order ID.');
+  const path = `${orderId}/${crypto.randomUUID()}.${extension}`;
+  const { error } = await supabase.storage.from('invoices').upload(path, file, {
+    contentType: file.type, upsert: false,
+  });
+  if (error) throw error;
+  return supabase.storage.from('invoices').getPublicUrl(path).data.publicUrl;
+}
+
 /** Downscale + JPEG-encode an image File in the browser via canvas. */
 async function compress(file: File, maxWidth = 1280): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
@@ -95,4 +111,3 @@ export async function signCnicUrl(pathOrUrl?: string | null): Promise<string | n
   }
   return data.signedUrl;
 }
-

@@ -34,6 +34,8 @@ const navItems = [
   { name: 'Category Price Edit', href: '/dashboard/products/bulk-price', icon: Tags },
   { name: 'Inventory', href: '/dashboard/products/inventory', icon: Boxes },
   { name: 'Orders', href: '/dashboard/orders', icon: ShoppingCart },
+  { name: 'POS Terminal', href: '/dashboard/pos', icon: ShoppingCart },
+  { name: 'Billing History', href: '/dashboard/history', icon: ClipboardList },
   { name: 'Locations', href: '/dashboard/locations', icon: MapPin },
   { name: 'Services', href: '/dashboard/services', icon: Wrench },
   { name: 'Service Requests', href: '/dashboard/service-requests', icon: ClipboardList },

@@ -211,6 +211,8 @@ export interface ProductPrice {
 }
 
 export interface Product {
+  price?: number | null;
+  wholesale_price?: number | null;
   id: string;
   category_id?: string | null;
   /**

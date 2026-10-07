@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Save } from 'lucide-react';
 import { supabase } from '@/lib/supabase-client';
 import { Product } from '@/types/admin.types';
@@ -18,12 +18,18 @@ export function BulkPriceTable({ products, onSaved }: BulkPriceTableProps) {
       products.map((p) => [
         p.id,
         {
-          customer: String(p.product_prices?.customer_price ?? 0),
-          wholesale: String(p.product_prices?.wholesale_price ?? 0),
+          customer: String(p.price ?? p.product_prices?.customer_price ?? 0),
+          wholesale: String(p.wholesale_price ?? p.product_prices?.wholesale_price ?? 0),
         },
       ])
     )
   );
+  useEffect(() => {
+    setPrices(Object.fromEntries(products.map((p) => [p.id, {
+      customer: String(p.price ?? p.product_prices?.customer_price ?? 0),
+      wholesale: String(p.wholesale_price ?? p.product_prices?.wholesale_price ?? 0),
+    }])));
+  }, [products]);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -31,8 +37,8 @@ export function BulkPriceTable({ products, onSaved }: BulkPriceTableProps) {
     const draft = prices[p.id];
     if (!draft) return false;
     return (
-      Number(draft.customer) !== (p.product_prices?.customer_price ?? 0) ||
-      Number(draft.wholesale) !== (p.product_prices?.wholesale_price ?? 0)
+      Number(draft.customer) !== (p.price ?? p.product_prices?.customer_price ?? 0) ||
+      Number(draft.wholesale) !== (p.wholesale_price ?? p.product_prices?.wholesale_price ?? 0)
     );
   };
 
@@ -43,45 +49,18 @@ export function BulkPriceTable({ products, onSaved }: BulkPriceTableProps) {
     setSaving(true);
     setMsg(null);
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      for (const p of changed) {
+      const updates = changed.map((p) => {
         const draft = prices[p.id];
-        const newCustomer = Number(draft.customer);
-        const newWholesale = Number(draft.wholesale);
-        const prevCustomer = p.product_prices?.customer_price ?? 0;
-        const prevWholesale = p.product_prices?.wholesale_price ?? 0;
-
-        const { error } = await supabase
-          .from('product_prices')
-          .upsert({ product_id: p.id, customer_price: newCustomer, wholesale_price: newWholesale });
-        if (error) throw error;
-
-        const historyRows: Array<Record<string, unknown>> = [];
-        if (newCustomer !== prevCustomer) {
-          historyRows.push({
-            product_id: p.id,
-            price_type: 'customer',
-            old_price: prevCustomer,
-            new_price: newCustomer,
-            changed_by: user?.id,
-          });
+        const customer = Number(draft.customer);
+        const wholesale = Number(draft.wholesale);
+        if (!draft.customer.trim() || !draft.wholesale.trim() ||
+            !Number.isFinite(customer) || !Number.isFinite(wholesale) || customer < 0 || wholesale < 0) {
+          throw new Error('Enter valid nonnegative customer and wholesale prices.');
         }
-        if (newWholesale !== prevWholesale) {
-          historyRows.push({
-            product_id: p.id,
-            price_type: 'wholesale',
-            old_price: prevWholesale,
-            new_price: newWholesale,
-            changed_by: user?.id,
-          });
-        }
-        if (historyRows.length) {
-          await supabase.from('product_price_history').insert(historyRows);
-        }
-      }
+        return { product_id: p.id, customer_price: customer, wholesale_price: wholesale };
+      });
+      const { error } = await supabase.rpc('admin_update_product_prices', { p_updates: updates });
+      if (error) throw error;
       setMsg({ ok: true, text: `${changed.length} product(s) updated.` });
       onSaved();
     } catch (err: any) {
@@ -110,6 +89,8 @@ export function BulkPriceTable({ products, onSaved }: BulkPriceTableProps) {
                   <input
                     type="number"
                     min={0}
+                    step="0.01"
+                    disabled={saving}
                     value={prices[p.id]?.customer ?? ''}
                     onChange={(e) =>
                       setPrices((s) => ({ ...s, [p.id]: { ...s[p.id], customer: e.target.value } }))
@@ -121,6 +102,8 @@ export function BulkPriceTable({ products, onSaved }: BulkPriceTableProps) {
                   <input
                     type="number"
                     min={0}
+                    step="0.01"
+                    disabled={saving}
                     value={prices[p.id]?.wholesale ?? ''}
                     onChange={(e) =>
                       setPrices((s) => ({ ...s, [p.id]: { ...s[p.id], wholesale: e.target.value } }))

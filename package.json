@@ -16,6 +16,8 @@
     "clsx": "^2.1.1",
     "expo": "^57.0.18",
     "expo-status-bar": "~57.0.1",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.395.0",
     "next": "14.2.5",
     "react": "^18.3.1",

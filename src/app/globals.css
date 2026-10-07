@@ -39,3 +39,63 @@ select optgroup {
   background: #2e2e36;
   border-radius: 9999px;
 }
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+
+  /* Isolate the invoice only when a printable invoice is mounted. */
+  body:has(#a4-printable-invoice) * {
+    visibility: hidden;
+  }
+
+  /* Hidden dashboard content must not occupy pages in Print / Save as PDF. */
+  body:has(#a4-printable-invoice) > :not(:has(#a4-printable-invoice)),
+  body *:has(#a4-printable-invoice) > :not(:has(#a4-printable-invoice)):not(#a4-printable-invoice) {
+    display: none !important;
+  }
+
+  html:has(#a4-printable-invoice),
+  body:has(#a4-printable-invoice) {
+    background: white;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Remove modal/dashboard clipping and positioned ancestor constraints. */
+  body *:has(#a4-printable-invoice) {
+    position: static !important;
+    transform: none !important;
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+
+  #a4-printable-invoice,
+  #a4-printable-invoice * {
+    visibility: visible;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  #a4-printable-invoice {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0;
+    padding: 15mm;
+    box-shadow: none;
+  }
+
+  #a4-printable-invoice thead {
+    display: table-header-group;
+  }
+
+  #a4-printable-invoice tr {
+    break-inside: avoid;
+  }
+}
