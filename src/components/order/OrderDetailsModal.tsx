@@ -83,8 +83,21 @@ export function OrderDetailsModal({ order, subtitle, onClose, onPrint, onDownloa
           <p className={remaining > 0 ? 'text-red-400' : 'text-green-400'}>Pending / Remaining Amount: {formatPKR(remaining)}</p>
         </section>
       </div>
-      <p className="mb-4 text-sm text-gray-300">{order.document_type === 'quotation' || order.status === 'quotation' ? 'Quotation' : 'Confirmed Bill'} · {order.fulfillment_source === 'factory' ? 'Factory Bill' : 'Shop Bill'}</p>
-      {(order.document_type === 'quotation' || order.status === 'quotation') && onConvert && <button type="button" disabled={converting || exporting || !invoiceReady} onClick={onConvert} className="mb-4 rounded-lg bg-brand px-4 py-2 font-semibold text-bg disabled:opacity-40">{converting ? 'Converting...' : 'Convert Quotation to Confirmed Bill'}</button>}
+      <p className="mb-4 text-sm text-gray-300">
+        {order.document_type === 'quotation' || order.status === 'quotation' ? 'Quotation' : 'Confirmed Bill'}
+        {' · '}
+        {order.fulfillment_source === 'factory' ? 'Factory Bill' : 'Shop Bill'}
+      </p>
+      {(order.document_type === 'quotation' || order.status === 'quotation') && onConvert && (
+        <button
+          type="button"
+          disabled={converting || exporting || !invoiceReady}
+          onClick={onConvert}
+          className="mb-4 rounded-lg bg-brand px-4 py-2 font-semibold text-bg disabled:opacity-40"
+        >
+          {converting ? 'Converting...' : 'Convert Quotation to Confirmed Bill'}
+        </button>
+      )}
       {children}
       {invoiceReady && <div ref={invoiceRef} data-invoice-export
         className="absolute -left-[9999px] top-0 pointer-events-none" aria-hidden="true">

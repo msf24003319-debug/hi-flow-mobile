@@ -176,7 +176,19 @@ export default function HistoryPage() {
     { key: 'total', header: 'Total / Net', render: o => <span>{formatPKR(o.total_amount ?? o.total)} / {formatPKR(o.net_amount ?? o.total)}</span> },
     { key: 'images', header: 'Images', render: o => `${o.image_urls?.length ?? 0} attached` },
     { key: 'date', header: 'Date', render: o => formatDateTime(o.created_at) },
-    { key: 'actions', header: 'Actions', render: o => <button className="text-brand" disabled={uploading || !!deletingUrl || exporting || converting} onClick={() => void openOrder(o)}>View / Attach receipt</button> },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: o => (
+        <button
+          className="text-brand"
+          disabled={uploading || !!deletingUrl || exporting || converting}
+          onClick={() => void openOrder(o)}
+        >
+          View / Attach receipt
+        </button>
+      ),
+    },
   ];
 
   return <div className="space-y-6">

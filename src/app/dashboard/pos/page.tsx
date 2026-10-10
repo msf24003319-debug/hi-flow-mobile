@@ -128,9 +128,22 @@ export default function PosPage() {
       if (!auth.user) throw new Error('Your session has expired. Sign in again before checkout.');
       if (!checkoutSnapshot.current) {
         checkoutSnapshot.current = {
-          document_type, fulfillment_source, id, buyerId: auth.user.id, accountId: accountId || null, accountType: account?.type ?? 'customer',
-          accountName: account?.name || 'Walk-in Customer', subtotal, discount: reduction, net: netTotal, payment,
-          paid_amount: paid, remaining_amount: remainingAmount, bill_status: billStatus, status: billStatus, customer_address: account?.address?.trim() || null,
+          document_type,
+          fulfillment_source,
+          id,
+          buyerId: auth.user.id,
+          accountId: accountId || null,
+          accountType: account?.type ?? 'customer',
+          accountName: account?.name || 'Walk-in Customer',
+          subtotal,
+          discount: reduction,
+          net: netTotal,
+          payment,
+          paid_amount: paid,
+          remaining_amount: remainingAmount,
+          bill_status: billStatus,
+          status: billStatus,
+          customer_address: account?.address?.trim() || null,
           items: lines.map(l => ({ id: crypto.randomUUID(), product_id: l.product.id, qty: l.qty,
             price: l.unit_price!, product_title_snapshot: l.product.title ?? 'Product' })),
         };
