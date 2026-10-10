@@ -7,6 +7,10 @@ const MAP: Record<string, string> = {
   rejected: 'bg-danger/15 text-danger border-danger/30',
   suspended: 'bg-danger/15 text-danger border-danger/30',
   // orders
+  quotation: 'text-blue-400 bg-blue-950/60 border-blue-800',
+  paid: 'text-green-400 bg-green-950/60 border-green-800',
+  partial: 'text-amber-400 bg-amber-950/60 border-amber-800',
+  unpaid: 'text-red-400 bg-red-950/60 border-red-800',
   confirmed: 'bg-info/15 text-info border-info/30',
   dispatched: 'bg-info/15 text-info border-info/30',
   ready_for_pickup: 'bg-warn/15 text-warn border-warn/30',

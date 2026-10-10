@@ -20,6 +20,10 @@ export type CnicOcrStatus =
 export type StockStatus = 'available' | 'out_of_stock';
 export type FulfillmentType = 'delivery' | 'pickup';
 export type OrderStatus =
+  | 'paid'
+  | 'partial'
+  | 'unpaid'
+  | 'quotation'
   | 'pending'
   | 'confirmed'
   | 'dispatched'
@@ -330,6 +334,9 @@ export interface OrderStatusHistory {
 }
 
 export interface Order {
+  bill_status?: 'quotation' | 'paid' | 'partial' | 'unpaid';
+  document_type?: 'invoice' | 'quotation';
+  fulfillment_source?: 'shop' | 'factory';
   id: string;
   order_number?: string;
   buyer_id: string;

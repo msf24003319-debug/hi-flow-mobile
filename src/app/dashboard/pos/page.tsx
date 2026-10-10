@@ -7,6 +7,8 @@ import { uploadInvoiceImage } from '@/lib/storage';
 import { Account, PosProduct, normalizeProduct, priceFor, money, cartTotals, errorMessage, attachInvoiceImage } from '@/lib/pos';
 import { formatPKR } from '@/lib/utils';
 import { CheckoutSnapshot, completeCheckout } from '@/lib/pos-checkout';
+import { checkoutPayment } from '@/lib/order-payment';
+import { verifySavedCheckout } from '@/lib/checkout-verification';
 
 const input = 'w-full min-w-0 rounded-lg border border-border bg-bg p-2 text-xs text-white';
 
@@ -19,6 +21,8 @@ export default function PosPage() {
   const [cart, setCart] = useState<Record<string, number>>({});
   const [discount, setDiscount] = useState('0');
   const [paidAmount, setPaidAmount] = useState('');
+  const [document_type, setDocumentType] = useState<'invoice' | 'quotation'>('invoice');
+  const [fulfillment_source, setFulfillmentSource] = useState<'shop' | 'factory'>('shop');
   const [payment, setPayment] = useState('cash');
   const [receipt, setReceipt] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -76,8 +80,7 @@ export default function PosPage() {
   });
   const { subtotal, netTotal } = cartTotals(lines, discount);
   const reduction = Number(discount);
-  const paid = Number(paidAmount);
-  const remainingAmount = money(netTotal - (Number.isFinite(paid) ? paid : 0));
+  const { paid, remaining: remainingAmount, status: billStatus } = checkoutPayment(document_type, netTotal, paidAmount);
   const validationError = lines.length === 0 ? 'Add at least one product before completing the sale.'
     : !Number.isFinite(subtotal) || subtotal <= 0 ? 'Total amount must be a valid amount greater than zero.'
     : lines.some(l => l.unit_price === null || l.unit_price <= 0 || !Number.isFinite(l.total_price)) ? 'Every product must have a valid price greater than zero.'
@@ -118,13 +121,16 @@ export default function PosPage() {
       const id = requestId.current ?? crypto.randomUUID();
       requestId.current = id;
       const { data: auth, error: authError } = await supabase.auth.getUser();
+      if (authError?.name === 'AuthSessionMissingError' || authError?.code === 'refresh_token_not_found' || authError?.code === 'refresh_token_already_used') {
+        throw new Error('Your session has expired. Sign in again before checkout.');
+      }
       if (authError) throw authError;
       if (!auth.user) throw new Error('Your session has expired. Sign in again before checkout.');
       if (!checkoutSnapshot.current) {
         checkoutSnapshot.current = {
-          id, buyerId: auth.user.id, accountId: accountId || null, accountType: account?.type ?? 'customer',
-          accountName: account?.name ?? 'Walk-in', subtotal, discount: reduction, net: netTotal, payment,
-          paid_amount: paid, remaining_amount: remainingAmount, customer_address: account?.address?.trim() || null,
+          document_type, fulfillment_source, id, buyerId: auth.user.id, accountId: accountId || null, accountType: account?.type ?? 'customer',
+          accountName: account?.name || 'Walk-in Customer', subtotal, discount: reduction, net: netTotal, payment,
+          paid_amount: paid, remaining_amount: remainingAmount, bill_status: billStatus, status: billStatus, customer_address: account?.address?.trim() || null,
           items: lines.map(l => ({ id: crypto.randomUUID(), product_id: l.product.id, qty: l.qty,
             price: l.unit_price!, product_title_snapshot: l.product.title ?? 'Product' })),
         };
@@ -132,7 +138,8 @@ export default function PosPage() {
       }
       if (checkoutSnapshot.current.buyerId !== auth.user.id) throw new Error('Sign in as the administrator who started this invoice.');
       const orderId = await completeCheckout(checkoutSnapshot.current);
-      setMessage(`Invoice POS-${orderId} saved.`);
+      await verifySavedCheckout(checkoutSnapshot.current);
+      setMessage(`${checkoutSnapshot.current.document_type === 'quotation' ? 'Quotation' : 'Confirmed bill'} POS-${orderId} saved.`);
       // The sale is committed first. A receipt failure must never prompt another sale.
       if (receipt) {
         try {
@@ -147,7 +154,11 @@ export default function PosPage() {
       checkoutSnapshot.current = null; setPendingCheckout(null);
       if (fileInput.current) fileInput.current.value = '';
     } catch (e) {
-      console.error('Checkout failed:', e);
+      console.error('Checkout failed:', {
+        message: e && typeof e === 'object' && 'message' in e ? e.message : String(e),
+        details: e && typeof e === 'object' && 'details' in e ? e.details : null,
+        error: e,
+      });
       if (e && typeof e === 'object' && 'canEdit' in e && e.canEdit === true) {
         checkoutSnapshot.current = null; setPendingCheckout(null); requestId.current = null;
       }
@@ -160,7 +171,7 @@ export default function PosPage() {
 
   return <div className="space-y-6">
     <div><h1 className="text-2xl font-bold">POS Terminal</h1><p className="text-subtle text-sm">Customer and shopkeeper billing</p></div>
-    {error && <p role="alert" className="text-danger">{error}</p>}
+    {error && <p role="alert" className="text-danger whitespace-pre-line">{error}{error.startsWith('Your session has expired.') && <> <Link href="/login" className="underline">Sign in</Link></>}</p>}
     {message && <p role="status" className="text-brand break-all">{message} <Link href="/dashboard/history" className="underline">View history</Link></p>}
     <fieldset disabled={busy || loading || !!pendingCheckout} className="grid min-w-0 grid-cols-[1.1fr_0.9fr] gap-2 disabled:opacity-70">
       <section className="min-w-0 space-y-2 text-xs">
@@ -178,7 +189,7 @@ export default function PosPage() {
       </section>
       <section className="min-w-0 space-y-2 text-xs [overflow-wrap:anywhere] bg-surface border border-border rounded-xl p-2">
         <label className="block">Buyer<select className={input} value={accountId} onChange={e => { setAccountId(e.target.value); requestId.current = null; }}>
-          <option value="">Walk-in (customer pricing)</option>
+          <option value="">Walk-in Customer (customer pricing)</option>
           {accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.type})</option>)}
         </select></label>
         <details><summary className="cursor-pointer text-brand">Add customer / shopkeeper account</summary>
@@ -203,8 +214,11 @@ export default function PosPage() {
         <p className="flex flex-wrap justify-between gap-2"><span>Subtotal</span><span>{formatPKR(subtotal)}</span></p>
         <label className="block">Discount (PKR)<input className={input} type="number" min="0" max={subtotal} step="0.01" value={discount} onChange={e => { setDiscount(e.target.value); requestId.current = null; }} /></label>
         <p className="flex flex-wrap justify-between gap-2 text-brand font-bold"><span>Net total</span><span>{formatPKR(netTotal)}</span></p>
-        <label className="block">Paid Amount (PKR)<input className={input} type="number" min="0" max={netTotal} step="0.01" placeholder={String(netTotal)} value={paidAmount} onChange={e => { setPaidAmount(e.target.value); requestId.current = null; }} /></label>
+        <label className="block">Paid Amount (PKR)<input disabled={document_type === 'quotation'} className={input} type="number" min="0" max={netTotal} step="0.01" placeholder={String(netTotal)} value={document_type === 'quotation' ? '0' : paidAmount} onChange={e => { setPaidAmount(e.target.value); requestId.current = null; }} /></label>
         <p aria-live="polite" className={`flex flex-wrap justify-between gap-2 ${remainingAmount > 0 ? 'text-red-400' : 'text-green-400'}`}><span>Pending / Remaining</span><span>{formatPKR(remainingAmount)}</span></p>
+        <label className="block">Document type<select className={input} value={document_type} onChange={e => { setDocumentType(e.target.value as 'invoice' | 'quotation'); requestId.current = null; }}><option value="invoice">Confirmed Bill</option><option value="quotation">Quotation</option></select></label>
+        <label className="block">Fulfillment source<select className={input} value={fulfillment_source} onChange={e => { setFulfillmentSource(e.target.value as 'shop' | 'factory'); requestId.current = null; }}><option value="shop">Shop Bill</option><option value="factory">Factory Bill</option></select></label>
+        {document_type === 'quotation' && <p className="text-subtle text-xs">Quotations do not deduct stock. Stock is deducted when converted to a confirmed bill.</p>}
         <label className="block">Payment method<select className={input} value={payment} onChange={e => { setPayment(e.target.value); requestId.current = null; }}><option value="cash">Cash</option><option value="card">Card</option><option value="bank_transfer">Bank transfer</option></select></label>
         <label className="block">Receipt image (optional, max 10 MB)<input ref={fileInput} className="block mt-2 w-full min-w-0 text-xs file:max-w-full file:whitespace-normal file:text-xs" type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setReceipt(e.target.files?.[0] ?? null)} /></label>
         <p className="text-muted text-xs">Attached images use public URLs. Upload receipts suitable for public access.</p>
@@ -212,6 +226,6 @@ export default function PosPage() {
       </section>
     </fieldset>
     {pendingCheckout && !busy && <p role="status" className="text-warn">Invoice POS-{pendingCheckout.id} is awaiting confirmation. Retry the same checkout to finish it.</p>}
-    <button type="button" disabled={busy || loading} onClick={() => void handleCompleteSale()} className="w-full rounded-lg bg-brand text-bg font-semibold p-3 disabled:opacity-40">{busy ? 'Saving...' : pendingCheckout ? 'Retry checkout' : 'Complete sale'}</button>
+    <button type="button" disabled={busy || loading} onClick={() => void handleCompleteSale()} className="w-full rounded-lg bg-brand text-bg font-semibold p-3 disabled:opacity-40">{busy ? 'Saving...' : pendingCheckout ? 'Retry checkout' : document_type === 'quotation' ? 'Save quotation' : 'Confirm bill'}</button>
   </div>;
 }

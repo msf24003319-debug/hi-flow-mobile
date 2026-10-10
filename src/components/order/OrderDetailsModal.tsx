@@ -5,6 +5,7 @@ import { ReactNode, RefObject } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Order } from '@/types/admin.types';
 import { formatPKR } from '@/lib/utils';
+import { orderPayment, BILL_STATUS_CLASSES } from '@/lib/order-payment';
 
 export interface OrderDetailsData extends Order {
   account_id?: string | null;
@@ -32,23 +33,25 @@ interface OrderDetailsModalProps {
   onClose: () => void;
   onPrint: () => void;
   onDownload: () => void;
+  onConvert?: () => void;
+  converting?: boolean;
   exporting: boolean;
   invoiceReady: boolean;
   invoiceRef: RefObject<HTMLDivElement>;
   invoiceTemplate: ReactNode;
+  subtotalAmount?: number;
   children: ReactNode;
 }
 
 export function OrderDetailsModal({ order, subtitle, onClose, onPrint, onDownload,
-  exporting, invoiceReady, invoiceRef, invoiceTemplate, children }: OrderDetailsModalProps) {
+  onConvert, converting, exporting, invoiceReady, invoiceRef, invoiceTemplate, subtotalAmount, children }: OrderDetailsModalProps) {
   const actionClass = 'p-2 rounded text-gray-400 hover:text-white hover:bg-gray-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
   // POS buyer_id identifies the administrator; customer contacts belong to the billing account.
   const customer = order.account_id || order.account_type ? order.account : order.buyer?.shopkeepers ?? order.buyer?.customers;
-  const name = order.account_name_snapshot ?? order.account?.name ?? customer?.name ?? 'Walk-in';
+  const name = order.account_name_snapshot ?? order.account?.name ?? customer?.name ?? 'Walk-in Customer';
   const type = order.account_type ?? order.account?.type ?? (order.buyer?.shopkeepers ? 'shopkeeper' : 'customer');
   const net = Number(order.net_amount ?? order.total);
-  const paid = order.paid_amount == null ? null : Number(order.paid_amount);
-  const remaining = order.remaining_amount == null ? (paid == null ? null : Math.max(0, Math.round((net - paid) * 100) / 100)) : Number(order.remaining_amount);
+  const { paid, remaining, status } = orderPayment(order.document_type, net, order.paid_amount, order.remaining_amount);
   return (
     <Modal open wide dark title={formatOrderNumber(order)} subtitle={subtitle} onClose={onClose}
       headerActions={<>
@@ -72,13 +75,16 @@ export function OrderDetailsModal({ order, subtitle, onClose, onPrint, onDownloa
         </section>
         <section className="min-w-0 space-y-2 rounded-xl border border-gray-800 bg-[#222222] p-4">
           <h3 className="mb-3 font-semibold">Payment totals</h3>
-          <p>Subtotal: {formatPKR(Number(order.total_amount ?? order.total))}</p>
+          <span className={`inline-block rounded border px-2 py-1 text-xs font-bold ${BILL_STATUS_CLASSES[status]}`}>{status.toUpperCase()}</span>
+          <p>Subtotal: {formatPKR(subtotalAmount ?? Number(order.total_amount ?? (net + Number(order.discount ?? 0))))}</p>
           <p>Discount: {formatPKR(Number(order.discount ?? 0))}</p>
           <p className="text-brand font-bold">Net Total: {formatPKR(net)}</p>
-          <p className="text-green-400">Paid Amount: {paid == null ? 'Not recorded' : formatPKR(paid)}</p>
-          <p className={remaining == null ? 'text-gray-400' : remaining > 0 ? 'text-red-400' : 'text-green-400'}>Pending / Remaining Amount: {remaining == null ? 'Not recorded' : formatPKR(remaining)}</p>
+          <p className="text-green-400">Paid Amount: {formatPKR(paid)}</p>
+          <p className={remaining > 0 ? 'text-red-400' : 'text-green-400'}>Pending / Remaining Amount: {formatPKR(remaining)}</p>
         </section>
       </div>
+      <p className="mb-4 text-sm text-gray-300">{order.document_type === 'quotation' || order.status === 'quotation' ? 'Quotation' : 'Confirmed Bill'} · {order.fulfillment_source === 'factory' ? 'Factory Bill' : 'Shop Bill'}</p>
+      {(order.document_type === 'quotation' || order.status === 'quotation') && onConvert && <button type="button" disabled={converting || exporting || !invoiceReady} onClick={onConvert} className="mb-4 rounded-lg bg-brand px-4 py-2 font-semibold text-bg disabled:opacity-40">{converting ? 'Converting...' : 'Convert Quotation to Confirmed Bill'}</button>}
       {children}
       {invoiceReady && <div ref={invoiceRef} data-invoice-export
         className="absolute -left-[9999px] top-0 pointer-events-none" aria-hidden="true">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase-client';
@@ -20,8 +20,12 @@ export function useAdminAuth(redirectTo = '/login'): UseAdminAuthReturn {
   const [isAdmin, setIsAdmin] = useState(false);
   const router = useRouter();
 
-  const evaluate = useCallback(
-    async (current: Session | null) => {
+  useEffect(() => {
+    let active = true;
+    let revision = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const evaluate = async (current: Session | null, request: number) => {
+      if (!active || request !== revision) return;
       setLoading(true);
       if (!current?.user) {
         setUser(null);
@@ -35,30 +39,41 @@ export function useAdminAuth(redirectTo = '/login'): UseAdminAuthReturn {
       setSession(current);
       setUser(current.user);
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', current.user.id)
-        .maybeSingle();
+      try {
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', current.user.id)
+          .maybeSingle();
+        if (active && request === revision) setIsAdmin(!error && profile?.role === 'admin');
+      } catch {
+        if (active && request === revision) setIsAdmin(false);
+      } finally {
+        if (active && request === revision) setLoading(false);
+      }
+    };
 
-      setIsAdmin(profile?.role === 'admin');
-      setLoading(false);
-    },
-    [redirectTo, router]
-  );
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, current) => {
+      const request = ++revision;
+      clearTimeout(timer);
+      // Supabase runs this callback under its auth lock. Defer profile
+      // requests until the callback returns so they can obtain a token.
+      timer = setTimeout(() => { void evaluate(current, request); }, 0);
+    });
+    return () => {
+      active = false;
+      ++revision;
+      clearTimeout(timer);
+      subscription.unsubscribe();
+    };
+  }, [redirectTo, router]);
 
   const signOut = async () => {
     await supabase.auth.signOut();
     router.replace(redirectTo);
   };
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => evaluate(data.session));
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_e, s) => evaluate(s));
-    return () => subscription.unsubscribe();
-  }, [evaluate]);
 
   return { user, session, loading, isAdmin, signOut };
 }

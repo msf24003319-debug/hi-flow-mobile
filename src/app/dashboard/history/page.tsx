@@ -2,6 +2,8 @@
 
 import { CloudUpload, Loader2, Trash2 } from 'lucide-react';
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { convertQuotation } from '@/lib/pos-checkout';
+import { BillingHistory, matchesBillingFilter, BillingFilter } from '@/components/order/BillingHistory';
 import { supabase } from '@/lib/supabase-client';
 import { uploadInvoiceImage } from '@/lib/storage';
 import { attachInvoiceImage, removeInvoiceImage, errorMessage } from '@/lib/pos';
@@ -30,6 +32,9 @@ const buyerType = (o: AuditOrder) => o.account_type ?? o.account?.type
 const invoice = formatOrderNumber;
 
 export default function HistoryPage() {
+  const [filter, setFilter] = useState<BillingFilter>('All');
+  const [converting, setConverting] = useState(false);
+  const conversionLock = useRef(false);
   const [orders, setOrders] = useState<AuditOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -87,6 +92,20 @@ export default function HistoryPage() {
       if (detailRequest.current === request) { setItems(rows); setItemsReady(true); }
     } catch (e) { if (detailRequest.current === request) setDetailError(errorMessage(e)); }
     finally { if (detailRequest.current === request) setDetailLoading(false); }
+  }
+
+  async function handleConvert() {
+    if (!selected || conversionLock.current || uploadLock.current || exportLock.current) return;
+    const id = selected.id;
+    conversionLock.current = true; setConverting(true); setDetailError('');
+    try {
+      await convertQuotation(id);
+      const { data, error } = await supabase.from('orders').select('*').eq('id', id).single();
+      if (error) throw error;
+      setOrders(old => old.map(o => o.id === id ? { ...o, ...data } : o));
+      setSelected(old => old?.id === id ? { ...old, ...data } : old);
+    } catch (e) { setDetailError(errorMessage(e)); }
+    finally { conversionLock.current = false; setConverting(false); }
   }
 
   async function saveAttachment(orderId: string, url: string) {
@@ -151,19 +170,23 @@ export default function HistoryPage() {
 
   const columns: Column<AuditOrder>[] = [
     { key: 'invoice', header: 'Invoice', render: o => <span className="font-mono break-all">{invoice(o)}</span> },
+    { key: 'document', header: 'Document / Source', render: o => `${o.document_type === 'quotation' || o.status === 'quotation' ? 'Quotation' : 'Confirmed Bill'} / ${o.fulfillment_source === 'factory' ? 'Factory' : 'Shop'}` },
     { key: 'buyer', header: 'Buyer', render: buyerName },
     { key: 'type', header: 'Type', render: o => <span className="capitalize">{buyerType(o)}</span> },
     { key: 'total', header: 'Total / Net', render: o => <span>{formatPKR(o.total_amount ?? o.total)} / {formatPKR(o.net_amount ?? o.total)}</span> },
     { key: 'images', header: 'Images', render: o => `${o.image_urls?.length ?? 0} attached` },
     { key: 'date', header: 'Date', render: o => formatDateTime(o.created_at) },
-    { key: 'actions', header: 'Actions', render: o => <button className="text-brand" disabled={uploading || !!deletingUrl || exporting} onClick={() => void openOrder(o)}>View / Attach receipt</button> },
+    { key: 'actions', header: 'Actions', render: o => <button className="text-brand" disabled={uploading || !!deletingUrl || exporting || converting} onClick={() => void openOrder(o)}>View / Attach receipt</button> },
   ];
 
   return <div className="space-y-6">
     <div className="flex justify-between"><div><h1 className="text-2xl font-bold">Billing &amp; Purchase History</h1><p className="text-sm text-subtle">POS and existing orders, with historical line items and receipts.</p></div><button className="text-brand" disabled={loading} onClick={() => void load()}>Refresh</button></div>
     {error && <p role="alert" className="text-danger">{error}</p>}
-    <DataTable columns={columns} rows={orders} loading={loading} rowKey={o => o.id} searchable={o => `${invoice(o)} ${buyerName(o)} ${buyerType(o)}`} searchPlaceholder="Search invoice, buyer or type" emptyText="No orders found." />
-    {selected && <OrderDetailsModal order={selected} subtitle={`${buyerName(selected)} (${buyerType(selected)})`} onClose={() => { if (!uploadLock.current && !exportLock.current) { ++detailRequest.current; setSelected(null); } }}
+    <BillingHistory value={filter} onChange={setFilter} />
+    <DataTable columns={columns} rows={orders.filter(o => matchesBillingFilter(o, filter))} loading={loading} rowKey={o => o.id} searchable={o => `${invoice(o)} ${buyerName(o)} ${buyerType(o)}`} searchPlaceholder="Search invoice, buyer or type" emptyText="No orders found." />
+    {selected && <OrderDetailsModal order={selected} subtitle={`${buyerName(selected)} (${buyerType(selected)})`} onClose={() => { if (!uploadLock.current && !exportLock.current && !conversionLock.current) { ++detailRequest.current; setSelected(null); } }}
+      onConvert={() => void handleConvert()} converting={converting}
+      subtotalAmount={itemsReady ? items.reduce((sum, item) => sum + item.qty * item.price, 0) : undefined}
       onPrint={() => void handleInvoiceOutput(false)} onDownload={() => void handleInvoiceOutput(true)}
       exporting={exporting} invoiceReady={itemsReady && !detailLoading} invoiceRef={invoiceRef}
       invoiceTemplate={
@@ -175,11 +198,11 @@ export default function HistoryPage() {
           email: selected.customer_email ?? selected.account?.email, type: buyerType(selected) }}
         invoice={{ number: invoice(selected), date: formatDateTime(selected.created_at),
           orderNumber: selected.order_number == null ? invoice(selected) : String(selected.order_number), paymentTerms: selected.payment_method ?? 'Not recorded',
-          orderStatus: selected.status, paymentStatus: selected.payment_status }}
+          documentType: selected.document_type, fulfillmentSource: selected.fulfillment_source, orderStatus: selected.status, paymentStatus: selected.payment_status }}
         items={items.map(item => ({ id: item.id,
           description: item.product_title_snapshot ?? item.product?.title ?? item.product?.name ?? item.product?.name_en ?? 'Unavailable product',
           quantity: item.qty, unitPrice: item.price }))}
-        discount={selected.discount ?? 0} subtotalAmount={selected.total_amount ?? selected.total}
+        discount={selected.discount ?? 0} subtotalAmount={items.reduce((sum, item) => sum + item.qty * item.price, 0)}
         totalAmount={selected.net_amount ?? selected.total} paidAmount={selected.paid_amount}
         remainingAmount={selected.remaining_amount} branding="Hi Flow Pump Industries" />
       }>

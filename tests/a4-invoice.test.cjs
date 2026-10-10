@@ -8,7 +8,7 @@ const React = require('react');
 const output = {};
 vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/components/order/A4InvoiceTemplate.tsx', 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
-}).outputText, { exports: output, require });
+}).outputText, { exports: output, require: name => name === '@/lib/order-payment' ? require('./helpers/order-payment.cjs') : require(name) });
 const base = {
   company: { name: '', address: '', cityPostCode: '', location: '', senderName: '', telephone: '', email: '', vatNtnNumber: '' },
   customer: { name: 'Buyer', address: '', city: '', telephone: '', type: '' },
@@ -19,7 +19,7 @@ const render = props => renderToStaticMarkup(React.createElement(output.A4Invoic
 
 test('sender fallbacks and shipping date render with consistent currency', () => {
   const html = render(base);
-  for (const text of ['Hi Flow Pump Industries', '+92 300 1234567', 'info@hiflowpumps.com', 'NTN-7492018-9', '06 Oct 2026', 'PKR 1,234.50', 'PKR 2,469.00', 'PKR 10.00', 'PKR 2,459.00']) assert.ok(html.includes(text), text);
+  for (const text of ['HiFlow Pump Industries', '+92 324 8498456', 'sultansohailkhan194@gmail.com', 'NTN-7492018-9', '06 Oct 2026', 'PKR 1,234.50', 'PKR 2,469.00', 'PKR 10.00', 'PKR 2,459.00']) assert.ok(html.includes(text), text);
 });
 
 test('missing customer details omit labels and supplied details appear', () => {
@@ -44,8 +44,14 @@ test('payment badge follows balances even when order status is completed', () =>
     assert.ok(html.includes(`PKR ${remainingAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`));
   }
 });
-test('missing historical payment stays unknown and absent balance is calculated from paid amount', () => {
-  assert.ok(render(base).includes('>NOT RECORDED<'));
+test('missing historical payment defaults to unpaid and absent balance is calculated from paid amount', () => {
+  assert.ok(render(base).includes('>UNPAID<'));
   const html = render({ ...base, paidAmount: 1000 });
   assert.ok(html.includes('>PARTIAL<') && html.includes('PKR 1,459.00'));
+});
+
+test('quotation ignores recorded payments and shows the full net balance with a blue badge', () => {
+  const html = render({ ...base, paidAmount: 2459, remainingAmount: 0, invoice: { ...base.invoice, documentType: 'quotation' } });
+  assert.ok(html.includes('>QUOTATION<') && html.includes('text-blue-400 bg-blue-950/60 border-blue-800'));
+  assert.ok(html.includes('PKR 0.00') && html.includes('PKR 2,459.00'));
 });

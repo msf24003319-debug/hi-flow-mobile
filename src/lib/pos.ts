@@ -42,8 +42,12 @@ export function cartTotals(items: { total_price: number }[], discount: string | 
   const reduction = Number(discount);
   return { subtotal, netTotal: money(Math.max(0, subtotal - (Number.isFinite(reduction) ? Math.max(0, reduction) : 0))) };
 }
-export const errorMessage = (error: unknown) =>
-  error && typeof error === 'object' && 'message' in error ? String(error.message) : 'Operation failed.';
+export const errorMessage = (error: unknown) => {
+  if (!error || typeof error !== 'object' || !('message' in error)) return 'Operation failed.';
+  const message = String(error.message);
+  const details = 'details' in error && error.details != null ? String(error.details) : '';
+  return details ? `${message}\nDetails: ${details}` : message;
+};
 
 /** Row-locked RPC prevents concurrent attachments overwriting one another. */
 export async function attachInvoiceImage(orderId: string, url: string): Promise<string[]> {

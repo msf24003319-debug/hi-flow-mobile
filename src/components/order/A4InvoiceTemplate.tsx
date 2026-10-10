@@ -1,4 +1,5 @@
 import { QrCode } from 'lucide-react';
+import { orderPayment, BILL_STATUS_CLASSES } from '@/lib/order-payment';
 
 export const DEFAULT_STORE_METADATA = {
   name: 'HiFlow Pump Industries',
@@ -35,6 +36,8 @@ export interface A4InvoiceTemplateProps {
     email?: string | null;
   };
   invoice: {
+    documentType?: 'invoice' | 'quotation';
+    fulfillmentSource?: 'shop' | 'factory';
     number: string;
     date: string;
     orderNumber: string;
@@ -71,15 +74,14 @@ export function A4InvoiceTemplate({
 }: A4InvoiceTemplateProps) {
   const subtotal = subtotalAmount ?? items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
   const total = totalAmount ?? subtotal - discount;
-  const money = (value: number) => `${currency} ${value.toLocaleString('en-US', {
+  const money = (value: number) => `${currency} ${value.toLocaleString('en-PK', {
     minimumFractionDigits: 2, maximumFractionDigits: 2,
   })}`;
 
   const storeName = company.name.trim() || DEFAULT_STORE_METADATA.name;
-  const remaining = remainingAmount ?? (paidAmount == null ? null : Math.max(0, Math.round((total - paidAmount) * 100) / 100));
-  const paid = paidAmount ?? (remaining == null ? null : Math.max(0, Math.round((total - remaining) * 100) / 100));
-  const paymentStatus = remaining == null ? 'NOT RECORDED' : remaining <= 0 ? 'PAID' : (paid ?? 0) > 0 ? 'PARTIAL' : 'UNPAID';
-  const statusClass = paymentStatus === 'PAID' ? 'bg-green-100 text-green-800' : paymentStatus === 'PARTIAL' ? 'bg-amber-100 text-amber-800' : paymentStatus === 'UNPAID' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-600';
+  const { paid, remaining, status } = orderPayment(invoice.documentType, total, paidAmount, remainingAmount);
+  const paymentStatus = status.toUpperCase();
+  const statusClass = BILL_STATUS_CLASSES[status];
   const orderNumber = /^\d+$/.test(invoice.orderNumber.trim()) ? `POS-${invoice.orderNumber.trim().padStart(4, '0')}` : invoice.orderNumber;
   const invoiceNumber = /^\d+$/.test(invoice.orderNumber.trim()) ? orderNumber : invoice.number;
 
@@ -88,7 +90,7 @@ export function A4InvoiceTemplate({
       className="mx-auto flex w-[210mm] min-h-[297mm] shrink-0 flex-col bg-white p-[15mm] font-sans text-gray-900 shadow-xl">
       <header className="mb-8 flex items-start justify-between gap-6">
         <div>
-          <h1 className="text-4xl font-extrabold uppercase tracking-wide text-slate-900">Billing Invoice</h1>
+          <h1 className="text-4xl font-extrabold uppercase tracking-wide text-slate-900">{invoice.documentType === 'quotation' ? 'Quotation' : 'Billing Invoice'}</h1>
           <p className="mt-2 text-xs uppercase tracking-[0.2em] text-gray-500">{invoiceNumber}</p>
         </div>
         <div aria-label="QR code placeholder" className="flex h-24 w-24 shrink-0 items-center justify-center border border-gray-300 bg-gray-50">
@@ -108,6 +110,7 @@ export function A4InvoiceTemplate({
           <Detail label="Telephone" value={company.telephone.trim() || DEFAULT_STORE_METADATA.telephone} />
           <Detail label="Email" value={company.email.trim() || DEFAULT_STORE_METADATA.email} />
           <Detail label="Shipping date" value={invoice.shippingDate?.trim() || invoice.date} />
+          <Detail label="Bill source" value={invoice.fulfillmentSource === 'factory' ? 'Factory' : 'Shop'} />
           <Detail label="Shipping number" value={invoice.shippingNumber} />
           <Detail label="VAT / NTN number" value={company.vatNtnNumber.trim() || DEFAULT_STORE_METADATA.vatNtnNumber} />
         </dl>
@@ -130,7 +133,7 @@ export function A4InvoiceTemplate({
           <Detail label="Date" value={invoice.date} />
           <Detail label="Order number" value={orderNumber} />
           <Detail label="Terms of payment" value={invoice.paymentTerms} />
-          <div className="grid grid-cols-[120px_1fr] gap-3 text-xs leading-5"><dt className="text-gray-500">Payment status</dt><dd><span className={`inline-block rounded px-2 py-1 font-bold ${statusClass}`}>{paymentStatus}</span></dd></div>
+          <div className="grid grid-cols-[120px_1fr] gap-3 text-xs leading-5"><dt className="text-gray-500">Payment status</dt><dd><span className={`inline-block rounded border px-2 py-1 font-bold ${statusClass}`}>{paymentStatus}</span></dd></div>
         </dl>
       </section>
 
@@ -165,8 +168,8 @@ export function A4InvoiceTemplate({
         <div className="flex justify-between gap-3 border-b border-gray-400 px-3 py-3"><dt>Subtotal</dt><dd className="text-right">{money(subtotal)}</dd></div>
         <div className="flex justify-between gap-3 border-b border-gray-400 px-3 py-3"><dt>Discount</dt><dd className="text-right">{money(discount)}</dd></div>
         <div className="flex justify-between gap-3 border-b border-gray-400 bg-gray-50 px-3 py-3 text-sm font-bold"><dt>Net Total</dt><dd className="text-right">{money(total)}</dd></div>
-        <div className="flex justify-between gap-3 border-b border-gray-400 px-3 py-3 text-green-700"><dt>Paid Amount</dt><dd className="text-right">{paid == null ? 'Not recorded' : money(paid)}</dd></div>
-        <div className={`flex justify-between gap-3 px-3 py-3 font-bold ${remaining == null ? 'text-gray-500' : remaining > 0 ? 'text-red-700' : 'text-green-700'}`}><dt>Pending / Remaining Balance</dt><dd className="text-right">{remaining == null ? 'Not recorded' : money(remaining)}</dd></div>
+        <div className="flex justify-between gap-3 border-b border-gray-400 px-3 py-3 text-green-700"><dt>Paid Amount</dt><dd className="text-right">{money(paid)}</dd></div>
+        <div className={`flex justify-between gap-3 px-3 py-3 font-bold ${remaining > 0 ? 'text-red-700' : 'text-green-700'}`}><dt>Pending / Remaining Balance</dt><dd className="text-right">{money(remaining)}</dd></div>
       </dl>
 
       <footer className="mt-auto flex items-center justify-center gap-2 pt-10 text-center text-[10px] text-gray-500">

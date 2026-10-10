@@ -56,6 +56,8 @@ export function OrderStatusUpdater({ orderId, current, onUpdated }: OrderStatusU
     }
   };
 
+  if (current === 'quotation') return <p className="text-sm text-subtle">Convert this quotation from Billing History to confirm it and deduct stock.</p>;
+
   return (
     <div className="space-y-3">
       <div>

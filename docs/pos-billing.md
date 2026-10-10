@@ -44,3 +44,20 @@ The optional receipt is uploaded after the sale commits. A receipt error clearly
 6. Verify unauthenticated/non-admin clients cannot invoke either RPC or upload receipts, while public receipt URLs open as configured. Confirm inventory behavior against existing triggers before production use.
 
 Local checks: `node --test tests/pos-pricing.test.cjs`, `npx.cmd tsc --noEmit --incremental false` and `npm.cmd run build`. Live database/storage checks require applying the migrations to a Supabase staging database; they have not been executed by this change.
+
+
+## Document workflows (2026-10-08)
+
+Apply `supabase/migrations/20261008000000_pos_document_workflows.sql` after the payment/address migration and before deploying the new UI. POS records `document_type` (invoice or quotation) and `fulfillment_source` (shop or factory). Existing orders default to invoice/shop. New bills use `confirmed`; quotations use `quotation`. Both sources use the existing product inventory because the schema has no separate factory stock ledger.
+
+The new UI requires transactional RPCs and never falls back to table inserts. Quotations preserve inventory; conversion preserves recorded prices, discounts, payment totals, account and source, and deducts current stock atomically. Product locks are acquired in stable order and duplicate product lines are aggregated. A row lock prevents repeated quotation conversions from deducting again. Failed conversions leave the quotation unchanged.
+
+Stock reconciliation supports existing synchronous triggers that deduct exactly once, as well as installations without deduction triggers. Unexpected adjustments (including a trigger that deducts quotation inventory) abort the transaction instead of persisting incorrect stock. Verify deployed inventory triggers, product stock aliases, and inventory reporting in staging. Unconditional item-insert deduction triggers must be made quotation-aware before quotations can be saved. The migration extends text status CHECK constraints to permit quotation; deployments using a status enum or status-history checks must extend those definitions too.
+
+Staging checks: save shop and factory quotations and verify stock stays unchanged; confirm each and verify one deduction; retry checkout and conversion concurrently and verify no duplicate deduction; attempt conversion with insufficient stock and verify the quotation and all product stock remain unchanged; test duplicate product lines; verify all five history filters and quotation PDF labels. Database checks require a Supabase staging connection and are not covered by mocked client tests.
+
+## Payment status (2026-10-09)
+
+Apply `supabase/migrations/20261009000000_pos_bill_payment_status.sql` after the document workflows migration, before deploying the payment UI. New checkout records persist `bill_status` and `status` as quotation, paid, partial, or unpaid. A blank invoice payment defaults to the discounted net total; explicit zero remains unpaid. Quotations always record zero paid and the full net balance. Conversion creates an unpaid invoice (or paid when its net total is zero). Modal and printed badges derive from the balances, with blue/green/amber/red colors. Missing historical payments display as zero paid.
+
+`total_amount` remains the subtotal; payment balances use `net_amount`/`total` after discounts. Checkout and conversion retain transactional stock verification and idempotent retries. Verify the migration, stock triggers, quotation conversion, and reload persistence in staging before deployment; the local tests do not execute PostgreSQL.
