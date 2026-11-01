@@ -12,6 +12,13 @@ vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/components/order/Orde
   if (name === '@/components/ui/Modal') return { Modal: ({ title, children }) => React.createElement('div', null, title, children) };
   if (name === '@/lib/utils') return { formatPKR: n => `Rs ${n}` };
   if (name === '@/lib/order-payment') return require('./helpers/order-payment.cjs');
+  if (name === '@/lib/order-location') {
+    const location = {};
+    vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/lib/order-location.ts', 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS },
+    }).outputText, { exports: location });
+    return location;
+  }
   return require(name);
 } });
 const order = { id: '45048f53-abcd', order_number: '1', total: 90, total_amount: 100, discount: 10,
@@ -19,6 +26,14 @@ const order = { id: '45048f53-abcd', order_number: '1', total: 90, total_amount:
   account: { name: 'Buyer', type: 'customer', phone: '03001234567', email: 'buyer@example.com', address: 'New address' },
   customer_address: 'Invoice address', paid_amount: 40, remaining_amount: 50 };
 const render = (data, props = {}) => renderToStaticMarkup(React.createElement(output.OrderDetailsModal, { order: data, invoiceReady: false, ...props }));
+
+test('custom location badge and snapshot address appear instead of current account address', () => {
+  const html = render({ ...order, customer_address: null, location_snapshot: {
+    is_custom: true, city: 'New City', area: 'New Ada', district: 'New District', landmark: 'Near school',
+  } });
+  for (const text of ['Custom Location', 'New City', 'New Ada', 'New District', 'Near school']) assert.ok(html.includes(text), text);
+  assert.ok(!html.includes('New address'));
+});
 
 test('sequential numbers and short uppercase fallback hide raw UUIDs', () => {
   assert.equal(output.formatOrderNumber(order), '#1 (POS-0001)');

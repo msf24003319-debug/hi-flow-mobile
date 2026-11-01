@@ -17,6 +17,14 @@ const base = {
 };
 const render = props => renderToStaticMarkup(React.createElement(output.A4InvoiceTemplate, props));
 
+test('manual address label and full escaped shipping address appear on invoice', () => {
+  const html = render({ ...base, customer: { ...base.customer, manualAddress: true,
+    address: 'House <2>, Ada, Tehsil, City, District' } });
+  assert.ok(html.includes('Custom Location'));
+  assert.ok(html.includes('House &lt;2&gt;, Ada, Tehsil, City, District'));
+  assert.ok(!render(base).includes('Custom Location'));
+});
+
 test('sender fallbacks and shipping date render with consistent currency', () => {
   const html = render(base);
   for (const text of ['HiFlow Pump Industries', '+92 324 8498456', 'sultansohailkhan194@gmail.com', 'NTN-7492018-9', '06 Oct 2026', 'PKR 1,234.50', 'PKR 2,469.00', 'PKR 10.00', 'PKR 2,459.00']) assert.ok(html.includes(text), text);

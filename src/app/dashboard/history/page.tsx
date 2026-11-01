@@ -12,6 +12,7 @@ import { downloadInvoicePdf } from '@/lib/invoice-pdf';
 import { DataTable, Column } from '@/components/ui/DataTable';
 import { OrderDetailsModal, OrderDetailsData, formatOrderNumber } from '@/components/order/OrderDetailsModal';
 import { formatDateTime, formatPKR } from '@/lib/utils';
+import { isCustomLocation, orderAddress } from '@/lib/order-location';
 
 interface AuditOrder extends OrderDetailsData {
   invoice_number: string | null; account_type: string | null; account_name_snapshot: string | null;
@@ -172,6 +173,7 @@ export default function HistoryPage() {
     { key: 'invoice', header: 'Invoice', render: o => <span className="font-mono break-all">{invoice(o)}</span> },
     { key: 'document', header: 'Document / Source', render: o => `${o.document_type === 'quotation' || o.status === 'quotation' ? 'Quotation' : 'Confirmed Bill'} / ${o.fulfillment_source === 'factory' ? 'Factory' : 'Shop'}` },
     { key: 'buyer', header: 'Buyer', render: buyerName },
+    { key: 'location', header: 'Address', render: o => <span>{isCustomLocation(o) && <strong className="text-brand block">Custom Location</strong>}{orderAddress(o) || 'Not recorded'}</span> },
     { key: 'type', header: 'Type', render: o => <span className="capitalize">{buyerType(o)}</span> },
     { key: 'total', header: 'Total / Net', render: o => <span>{formatPKR(o.total_amount ?? o.total)} / {formatPKR(o.net_amount ?? o.total)}</span> },
     { key: 'images', header: 'Images', render: o => `${o.image_urls?.length ?? 0} attached` },
@@ -195,7 +197,7 @@ export default function HistoryPage() {
     <div className="flex justify-between"><div><h1 className="text-2xl font-bold">Billing &amp; Purchase History</h1><p className="text-sm text-subtle">POS and existing orders, with historical line items and receipts.</p></div><button className="text-brand" disabled={loading} onClick={() => void load()}>Refresh</button></div>
     {error && <p role="alert" className="text-danger">{error}</p>}
     <BillingHistory value={filter} onChange={setFilter} />
-    <DataTable columns={columns} rows={orders.filter(o => matchesBillingFilter(o, filter))} loading={loading} rowKey={o => o.id} searchable={o => `${invoice(o)} ${buyerName(o)} ${buyerType(o)}`} searchPlaceholder="Search invoice, buyer or type" emptyText="No orders found." />
+    <DataTable columns={columns} rows={orders.filter(o => matchesBillingFilter(o, filter))} loading={loading} rowKey={o => o.id} searchable={o => `${invoice(o)} ${buyerName(o)} ${buyerType(o)} ${orderAddress(o)}`} searchPlaceholder="Search invoice, buyer, type or address" emptyText="No orders found." />
     {selected && <OrderDetailsModal order={selected} subtitle={`${buyerName(selected)} (${buyerType(selected)})`} onClose={() => { if (!uploadLock.current && !exportLock.current && !conversionLock.current) { ++detailRequest.current; setSelected(null); } }}
       onConvert={() => void handleConvert()} converting={converting}
       subtotalAmount={itemsReady ? items.reduce((sum, item) => sum + item.qty * item.price, 0) : undefined}
@@ -205,7 +207,7 @@ export default function HistoryPage() {
       <A4InvoiceTemplate
         company={{ name: 'Hi Flow Pump Industries', address: '', cityPostCode: '', location: '',
           senderName: '', telephone: '', email: '', vatNtnNumber: '' }}
-        customer={{ name: buyerName(selected), address: selected.customer_address ?? selected.account?.address ?? selected.delivery_address ?? '', city: '',
+        customer={{ name: buyerName(selected), address: orderAddress(selected), city: '', manualAddress: isCustomLocation(selected),
           telephone: selected.customer_phone ?? (selected.account_id || selected.account_type ? selected.account?.phone ?? '' : selected.buyer?.shopkeepers?.phone ?? selected.buyer?.customers?.phone ?? ''),
           email: selected.customer_email ?? selected.account?.email, type: buyerType(selected) }}
         invoice={{ number: invoice(selected), date: formatDateTime(selected.created_at),

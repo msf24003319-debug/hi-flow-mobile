@@ -178,6 +178,16 @@ export interface Station {
 }
 
 export interface OrderLocationSnapshot {
+  shop_name?: string | null;
+  shop_number?: string | null;
+  market?: string | null;
+  village?: string | null;
+  adda?: string | null;
+  is_manual?: boolean;
+  address_line?: string | null;
+  is_custom?: boolean;
+  city?: string | null;
+  landmark?: string | null;
   province: string;
   division: string;
   district: string;
@@ -342,6 +352,7 @@ export interface Order {
   buyer_id: string;
   fulfillment_type: FulfillmentType;
   pickup_location_id?: string | null;
+  customer_address?: string | null;
   delivery_address?: string | null;
   division_id?: string | null;
   district_id?: string | null;

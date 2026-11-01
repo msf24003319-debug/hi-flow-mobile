@@ -4,13 +4,14 @@ export const dynamic = 'force-dynamic';
 
 import { useCallback, useEffect, useState } from 'react';
 import { Eye } from 'lucide-react';
+import { isCustomLocation, orderAddress } from '@/lib/order-location';
 import { supabase } from '@/lib/supabase-client';
 import { Order } from '@/types/admin.types';
 import { DataTable, Column } from '@/components/ui/DataTable';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Modal } from '@/components/ui/Modal';
 import { OrderStatusUpdater } from '@/components/order/OrderStatusUpdater';
-import { formatPKR, formatDate, formatDateTime } from '@/lib/utils';
+import { downloadCSV, formatPKR, formatDate, formatDateTime } from '@/lib/utils';
 
 function buyerInfo(order: Order): { name: string; phone: string; role: 'Shopkeeper' | 'Customer' | 'Unknown' } {
   const shop = order.buyer?.shopkeepers;
@@ -82,6 +83,7 @@ export default function OrdersPage() {
       header: 'Fulfilment',
       render: (o) => <span className="capitalize">{o.fulfillment_type}</span>,
     },
+    { key: 'location', header: 'Address', render: o => <span>{isCustomLocation(o) && <strong className="text-brand block">Custom Location</strong>}{orderAddress(o) || 'Not recorded'}</span> },
     { key: 'total', header: 'Total', render: (o) => <span className="font-mono text-white">{formatPKR(o.total)}</span> },
     { key: 'status', header: 'Status', render: (o) => <StatusBadge status={o.status} /> },
     {
@@ -112,12 +114,16 @@ export default function OrdersPage() {
         </div>
       )}
 
+      <button className="text-brand text-sm" onClick={() => downloadCSV('orders.csv', orders.map(o => ({
+        order: o.order_number ?? o.id, buyer: buyerInfo(o).name, status: o.status,
+        address: orderAddress(o), custom_location: isCustomLocation(o) ? 'Yes' : 'No', total: o.total,
+      })))}>Export orders CSV</button>
       <DataTable
         columns={columns}
         rows={orders}
         loading={loading}
         rowKey={(o) => o.id}
-        searchable={(o) => `${o.order_number ?? ''} ${buyerInfo(o).name} ${buyerInfo(o).phone}`}
+        searchable={(o) => `${o.order_number ?? ''} ${buyerInfo(o).name} ${buyerInfo(o).phone} ${orderAddress(o)}`}
         searchPlaceholder="Search order #, buyer, phone…"
         emptyText="No orders yet."
       />
@@ -140,14 +146,14 @@ export default function OrdersPage() {
               <div>
                 <p className="text-muted">Fulfilment</p>
                 <p className="text-white capitalize">{selected.fulfillment_type}</p>
-                {selected.delivery_address ? (
-                  <p className="text-subtle mt-1">Landmark: {selected.delivery_address}</p>
+                {orderAddress(selected) ? (
+                  <p className="text-subtle mt-1">{isCustomLocation(selected) && <strong className="text-brand">Custom Location: </strong>}{orderAddress(selected)}</p>
                 ) : null}
               </div>
             </div>
 
             {/* Delivery / Collection Location */}
-            {selected.location_snapshot ? (
+            {selected.location_snapshot && !isCustomLocation(selected) ? (
               <div className="bg-bg border border-border rounded-lg p-4">
                 <p className="font-semibold text-white mb-2">Delivery / Collection Location</p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
@@ -185,7 +191,7 @@ export default function OrdersPage() {
               </div>
             ) : (
               <div className="bg-bg border border-border rounded-lg p-4 text-muted">
-                No structured location — legacy order.
+                {orderAddress(selected) || 'No structured location — legacy order.'}
               </div>
             )}
 

@@ -28,6 +28,7 @@ export interface A4InvoiceTemplateProps {
     vatNtnNumber: string;
   };
   customer: {
+    manualAddress?: boolean;
     name: string;
     address: string;
     city: string;
@@ -119,6 +120,7 @@ export function A4InvoiceTemplate({
       <section aria-label="Customer and invoice details" className="mb-7 grid grid-cols-2 gap-8 border-t-4 border-black pt-5">
         <div>
           <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-gray-500">Send To</h2>
+          {customer.manualAddress && <p className="mb-1 text-xs font-bold">Custom Location</p>}
           <p className="mb-1 break-words text-base font-bold">{customer.name}</p>
           {customer.address.trim() && <p className="whitespace-pre-line break-words text-xs leading-5">{customer.address}</p>}
           {customer.city.trim() && <p className="text-xs leading-5">{customer.city}</p>}

@@ -6,6 +6,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Order } from '@/types/admin.types';
 import { formatPKR } from '@/lib/utils';
 import { orderPayment, BILL_STATUS_CLASSES } from '@/lib/order-payment';
+import { isCustomLocation, orderAddress } from '@/lib/order-location';
 
 export interface OrderDetailsData extends Order {
   account_id?: string | null;
@@ -67,9 +68,10 @@ export function OrderDetailsModal({ order, subtitle, onClose, onPrint, onDownloa
       <div className="mb-6 grid gap-4 sm:grid-cols-2 text-sm text-gray-200">
         <section className="min-w-0 rounded-xl border border-gray-800 bg-[#222222] p-4">
           <h3 className="mb-3 font-semibold">Customer details</h3>
+          {isCustomLocation(order) && <span className="text-brand font-bold">Custom Location</span>}
           <dl className="space-y-2 [overflow-wrap:anywhere]">
             {Object.entries({ Name: name, Type: type, Phone: customer?.phone, Email: order.account?.email,
-              Address: order.customer_address ?? order.account?.address ?? order.delivery_address }).map(([label, value]) =>
+              Address: orderAddress(order) }).map(([label, value]) =>
               <div key={label}><dt className="text-gray-400">{label}</dt><dd className="whitespace-pre-line">{value?.trim() || 'Not recorded'}</dd></div>)}
           </dl>
         </section>
