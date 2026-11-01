@@ -1,4 +1,4 @@
-# Hi Flow — Admin Panel
+# Hi Flow Admin Panel
 
 Next.js 14 (App Router) + Tailwind + Supabase. Gold-on-dark, matches the mobile app.
 Covers the Admin Panel Flow section of `../HiFlow_App_Flow.pdf`.
